@@ -55,9 +55,9 @@ public class TMapClient {
                     .distance((int)Double.parseDouble(properties.get("totalDistance").toString()))
                     .polyline(properties.get("geometry").toString())
                     .cpted(Map.of("avg", 0.0))
-                    .summary_grade("")
-                    .ai_preview(new ArrayList<>())
-                    .is_recommended(false)
+                    .summaryGrade("")
+                    .aiPreview(new ArrayList<>())
+                    .isRecommended(false)
                     .build();
             pathList.add(path);
         }
