@@ -3,10 +3,11 @@ package likelion._th.ganzithon.dto.request;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
+import lombok.Data;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-@Getter
+@Data
 @NoArgsConstructor
 @AllArgsConstructor
 // 경로 조회 요청
@@ -27,11 +28,19 @@ public class PathSearchRequest {
     @JsonProperty("end_lng")
     private Double endLng; //도착지 경도
 
-    @NotNull
+    @JsonProperty("waypoint_lat")
+    private Double waypointLat;
+
+    @JsonProperty("waypoint_lng")
+    private Double waypointLng;
+
     @JsonProperty("start_name")
     private String startName;
 
-    @NotNull
     @JsonProperty("end_name")
     private String endName;
+
+    public boolean hasWaypoint() {
+        return waypointLat != null && waypointLng != null;
+    }
 }

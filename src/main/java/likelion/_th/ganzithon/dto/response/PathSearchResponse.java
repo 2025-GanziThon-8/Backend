@@ -2,11 +2,12 @@ package likelion._th.ganzithon.dto.response;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
+import lombok.Data;
 import lombok.Getter;
 
 import java.util.List;
 
-@Getter
+@Data
 @Builder
 @AllArgsConstructor
 // 길찾기 응답

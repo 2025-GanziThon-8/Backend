@@ -37,7 +37,7 @@ public class CptedService {
         }
 
         // 2. 전체 경로 CPTED 합산
-        int totalCctv = 0, totalLight = 0, totalStore = 0, totalPolice = 0;
+        int totalCctv = 0, totalLight = 0, totalStore = 0, totalPolice = 0, totalSchool = 0;
         double totalScore = 0;
 
         for (FirebaseClient.SafetyCell cell : visitedCells.values()) {
@@ -47,6 +47,7 @@ public class CptedService {
             totalLight += cell.getLightCount();
             totalScore += cell.getStoreCount();
             totalPolice += cell.getPoliceCount();
+            totalSchool += cell.getSchoolCount();
             totalScore += cell.getCptedScore();
         }
         double avgCpted = visitedCells.isEmpty() ? 0.0 : totalScore / visitedCells.size();
@@ -71,7 +72,7 @@ public class CptedService {
                 .lightCount(totalLight)
                 .storeCount(totalStore)
                 .policeCount(totalPolice)
-                .schoolCount(0)
+                .schoolCount(totalSchool)
                 .cptedAvg(avgCpted)
                 .segments(segments)
                 .riskSegmentCount(riskCount)

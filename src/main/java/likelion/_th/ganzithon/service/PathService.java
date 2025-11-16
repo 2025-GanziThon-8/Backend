@@ -1,6 +1,6 @@
 package likelion._th.ganzithon.service;
 
-import likelion._th.ganzithon.client.GoogleMapClient;
+import likelion._th.ganzithon.client.TmapsClient;
 import likelion._th.ganzithon.client.UpstageAiClient;
 import likelion._th.ganzithon.dto.RouteAnalysisData;
 import likelion._th.ganzithon.dto.request.PathSearchRequest;
@@ -13,7 +13,6 @@ import org.springframework.stereotype.Service;
 import java.util.*;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -21,32 +20,54 @@ import java.util.stream.Collectors;
 // 경로 조회
 public class PathService {
 
-    private final GoogleMapClient googleMapClient;
+//    private final GoogleMapsClient googleMapsClient;
+    private final TmapsClient tmapsClient;
     private final UpstageAiClient upstageAiClient;
     private final CptedService cptedService;
 
     // 선택할 3개의 경로를 탐색
     public PathSearchResponse searchPaths(PathSearchRequest request) throws ExecutionException, InterruptedException, TimeoutException {
+        log.info("경로 검색 시작: ({},{}) → ({},{})",
+                request.getStartLat(), request.getStartLng(),
+                request.getEndLat(), request.getEndLng());
+
+        // 경유지 로깅
+        if (request.hasWaypoint()) {
+            log.info("경유지 포함: ({},{})", request.getWaypointLat(), request.getWaypointLng());
+        }
+
         // 1. 구글 api로 경로 조회
-        List<GoogleMapClient.GoogleRoute> googleRoutes = googleMapClient.getGoogleMapPaths(request);
+        List<TmapsClient.TmapRoute> tmapRoutes = tmapsClient.getRoutes(request.getStartLat(),
+                request.getStartLng(),
+                request.getEndLat(),
+                request.getEndLng(),
+                request.getWaypointLat(),  // null 가능
+                request.getWaypointLng()   // null 가능
+        );
+
+        if (tmapRoutes.isEmpty()) {
+            throw new IllegalArgumentException("경로를 찾을 수 없습니다. 출발지와 도착지를 확인해주세요.");
+        }
+
+        log.info("티맵에서 {} 개 경로 수신", tmapRoutes.size());
 
         //2. 각 경로에 대해 CPTED 분석 수행
         List<RouteAnalysisData> analyzedRoutes = new ArrayList<>();
         List<String> enncodedPolylines = new ArrayList<>();
 
-        for (int i = 0; i < googleRoutes.size(); i++) {
-            GoogleMapClient.GoogleRoute googleRoute = googleRoutes.get(i);
+        for (int i = 0; i < tmapRoutes.size(); i++) {
+            TmapsClient.TmapRoute tmapRoute = tmapRoutes.get(i);
             String routeId = "path-" + (i + 1);
 
             RouteAnalysisData analyzed = cptedService.analyzeRoute(
                     routeId,
-                    googleRoute.getCoordinates(),
-                    googleRoute.getDistance(),
-                    googleRoute.getDuration()
+                    tmapRoute.getCoordinates(),
+                    tmapRoute.getDistance(),
+                    tmapRoute.getDuration()
             );
 
             analyzedRoutes.add(analyzed);
-            enncodedPolylines.add(googleRoute.getEncodePolyline()); // 원본 저장
+            enncodedPolylines.add(tmapRoute.getEncodedPolyline()); // 원본 저장
         }
 
         // 3. 3개의 경로 선택
@@ -64,6 +85,8 @@ public class PathService {
 
             pathInfos.add(convertToPathInfo(route, isRecommended, encodedPolyline));
         }
+
+        log.info("경로 검색 완료: 총 {} 개 경로 반환 (추천: {})", pathInfos.size(), recommendedRouteId);
 
         return PathSearchResponse.builder()
                 .message("후보 경로 조회 성공")
@@ -110,6 +133,8 @@ public class PathService {
                         .orElse(allRoutes.get(2)));
         selected.add(balanced);
 
+        log.info("3개 경로 선택 완료: 안전우선={}, 빠른경로={}, 균형경로={}",
+                safest.getRouteId(), fastest.getRouteId(), balanced.getRouteId());
 
         return selected;
     }
@@ -138,22 +163,14 @@ public class PathService {
     // CPTED 등급
     private String calculateGrade(double cptedAvg) {
         String grade;
+        if (cptedAvg >= 4.0) grade = "A";
+        else if (cptedAvg >= 3.0) grade = "B";
+        else if (cptedAvg >= 2.0) grade = "C";
+        else if (cptedAvg >= 1.0) grade = "D";
+        else grade = "F";
 
-        if (cptedAvg >= 80) {
-            grade = "A";
-        } else if(cptedAvg >= 70) {
-            grade = "B";
-        } else if(cptedAvg >= 60) {
-            grade = "C";
-        } else if(cptedAvg >= 50) {
-            grade = "D";
-        } else {
-            grade = "F";
-        }
-
-        // 100점 만점으로 환산
-        int scaledScore = (int)Math.min(cptedAvg * 20, 100);
-        return String.format("%s (%d)점", grade, scaledScore);
+        int scaledScore = (int) Math.min(cptedAvg * 20, 100);
+        return String.format("%s (%d점)", grade, scaledScore);
     }
 
 }
