@@ -43,3 +43,11 @@ out/
 .gradle/
 out/
 build/
+
+# Env
+.env
+*.env
+
+# Firebase
+serviceAccountKey.json
+*firebase*.json

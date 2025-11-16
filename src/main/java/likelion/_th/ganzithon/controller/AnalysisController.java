@@ -18,7 +18,7 @@ import java.util.List;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
 
-@Controller
+@RestController
 @RequestMapping(value = "/api/v1/analysis/")
 //@RequiredArgsConstructor
 public class AnalysisController {

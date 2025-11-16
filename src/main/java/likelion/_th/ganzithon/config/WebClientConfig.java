@@ -15,7 +15,7 @@ public class WebClientConfig {
     @Value("${external-api.upstage.base-url}")
     private String upstageBaseUrl;
 
-    @Value("${external-api.google-map.base-url}")
+    @Value("${external-api.google.base-url}")
     private String googleMapBaseUrl;
 
     @Bean(name = "tmapClient")

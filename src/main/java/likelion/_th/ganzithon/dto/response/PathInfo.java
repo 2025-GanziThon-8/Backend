@@ -2,6 +2,7 @@ package likelion._th.ganzithon.dto.response;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Builder;
+import lombok.Data;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -9,7 +10,6 @@ import java.util.List;
 import java.util.Map;
 
 @Getter
-@Setter
 @Builder
 // 길찾기 - 길에 대한 정보
 public class PathInfo {
@@ -25,8 +25,8 @@ public class PathInfo {
     // 종합 등금: A(90점)
     @JsonProperty("summary_grade")
     private String summaryGrade;
-    @JsonProperty("ai_preview")
     // AI 리뷰
+    @JsonProperty("ai_preview")
     private List<String> aiPreview;
     // 추천 경로 여부
     @JsonProperty("is_recommended")

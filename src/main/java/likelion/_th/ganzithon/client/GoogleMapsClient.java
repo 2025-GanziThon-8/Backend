@@ -11,35 +11,72 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
-@RequiredArgsConstructor
+@Component
+//@RequiredArgsConstructor
 @Slf4j
-public class GoogleMapClient {
+public class GoogleMapsClient {
 
-    @Qualifier("googleMapClient")
     private final WebClient webClient;
-
-    @Value("${external-api.google-map.api-key}")
     private String googleMapApiKey;
+
+    // 명시적 생성자
+    public GoogleMapsClient(
+            @Qualifier("googleMapClient") WebClient webClient,
+            @Value("${external-api.google.api-key}") String googleMapApiKey
+    ) {
+        this.webClient = webClient;
+        this.googleMapApiKey = googleMapApiKey;
+    }
 
     public List<GoogleRoute> getGoogleMapPaths(PathSearchRequest request) {
         String origin = request.getStartLat() + "," + request.getStartLng();
         String destination = request.getEndLat() + "," + request.getEndLng();
 
         // google direction api 호출
-        JsonNode response = webClient.get()
-                .uri(uriBuilder -> uriBuilder
-                        .path("/maps/api/directions/json")
-                        .queryParam("origin", origin)
-                        .queryParam("destination", destination)
-                        .queryParam("model", "walking")
-                        .queryParam("alternatives", "true")
-                        .queryParam("key",googleMapApiKey)
-                        .build())
-                .retrieve()
-                .bodyToMono(JsonNode.class)
-                .block();
+        var uriBuilder = webClient.get()
+                .uri(uriBuilder1 -> {
+                    var builder = uriBuilder1
+                            .path("/maps/api/directions/json")
+                            .queryParam("origin", origin)
+                            .queryParam("destination", destination)
+                            .queryParam("model", "walking") // 도보
+                            .queryParam("alternatives", "true") // 여러 경로 받기
+                            .queryParam("key",googleMapApiKey);
+
+                    // 경유지 있을 경우 queryParam에 경유지 위도 경도 추가
+                    if (request.hasWaypoint()) {
+                        builder.queryParam("waypoints", request.getWaypointLat() + "," + request.getWaypointLng());
+                    }
+                    return builder.build();
+                });
+
+        log.info("[GoogleMapsClient] 요청 URI: {}", uriBuilder.toString());
+
+        JsonNode response;
+        try {
+            response = uriBuilder
+                    .retrieve()
+                    .bodyToMono(JsonNode.class)
+                    .block();
+        } catch (Exception e) {
+            log.error("[GoogleMapsClient] API 호출 실패", e);
+            throw new RuntimeException("Google Maps API 호출 실패", e);
+        }
+
+        if (response == null) {
+            log.error("[GoogleMapsClient] Google Maps 응답이 null입니다.");
+            return Collections.emptyList();
+        }
+
+        if (!response.has("routes")) {
+            log.error("[GoogleMapsClient] 응답에 routes 필드가 없습니다. 응답 내용: {}", response.toString());
+            return Collections.emptyList();
+        }
+
+        log.info("[GoogleMapsClient] Google Maps 응답 수신, routes 개수: {}", response.get("routes").size());
 
         return parseGoogleRoutes(response);
     }

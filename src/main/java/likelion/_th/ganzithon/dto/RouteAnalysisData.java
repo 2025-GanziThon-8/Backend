@@ -1,14 +1,11 @@
 package likelion._th.ganzithon.dto;
 
 import likelion._th.ganzithon.domain.LatLng;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
+import lombok.*;
 
 import java.util.List;
 
-@Getter
+@Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
@@ -33,7 +30,7 @@ public class RouteAnalysisData {
     private Integer riskSegmentCount;        // 주의/위험 구간 개수
 
     // 구간 분석 용
-    @Getter
+    @Data
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor

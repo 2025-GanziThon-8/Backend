@@ -26,7 +26,7 @@ public class ReportService {
     private final UpstageAiClient upstageAiClient;
 
     public ReportResponse generateReport(ReportRequest request) throws JsonProcessingException, ExecutionException, InterruptedException, TimeoutException {
-        // 1. 좌표 반환
+        // 1. polyline 좌표 반환
         List<LatLng> coordinates = request.getCoordinates().stream()
                 .map(c -> new LatLng(c.getLat(), c.getLng()))
                 .collect(Collectors.toList());
@@ -86,6 +86,7 @@ public class ReportService {
         int light = analysis.getLightCount();
         int store = analysis.getStoreCount();
         int police = analysis.getPoliceCount();
+        int school = analysis.getSchoolCount();
 
         // 1. 자연감시
         int naturalSurveillance = calculateScore(cctv * 4 + light * 3, 70);
@@ -94,7 +95,7 @@ public class ReportService {
         int accessControl = calculateScore(police * 10 + (cctv + light + store), 40);
 
         //3. 영역성 강화
-        int territoriality = calculateScore(store * 8 + light * 2, 50);
+        int territoriality = calculateScore(school * 10 + store * 5, 50);
 
         // 4. 활동성 증대
         int activitySupport = calculateScore(store * 10, 50);
@@ -103,14 +104,19 @@ public class ReportService {
         int maintenance = calculateScore(light * 4, 60);
 
         return ReportResponse.CptedEvaluation.builder()
+                // 자연감시 - cctv, 가로등
                 .naturalSurveillance(buildCptedItem("자연감시", naturalSurveillance,
                         generateDescription("자연감시", naturalSurveillance, cctv, light)))
+                // 접근 통제 - 경찰서
                 .accessControl(buildCptedItem("접근통제", accessControl,
-                        generateDescription("접근통제", accessControl, cctv, light)))
+                        generateDescription("접근통제", accessControl, police, 0)))
+                // 영역성 강화 - 학교
                 .territoriality(buildCptedItem("영역성 강화", territoriality,
-                        generateDescription("영역성", territoriality, store, 0)))
+                        generateDescription("영역성", territoriality, school, 0)))
+                // 활동성 증대 - 편의점
                 .activitySupport(buildCptedItem("활동성 증대", activitySupport,
                         generateDescription("활동성", activitySupport, store, 0)))
+                // 유지관리 - 가로등
                 .maintenance(buildCptedItem("유지관리", maintenance,
                         generateDescription("유지관리", maintenance, light, 0)))
                 .facilities(ReportResponse.Facilities.builder()
@@ -118,7 +124,7 @@ public class ReportService {
                         .lightCount(light)
                         .storeCount(store)
                         .policeCount(police)
-                        .schoolCount(0)
+                        .schoolCount(school)
                         .build())
                 .build();
     }
@@ -137,32 +143,58 @@ public class ReportService {
                 .build();
     }
 
-    // CPTED 항목별, 점수별 설명 생성
+    // <CPTED 평가> 항목별, 점수별 설명 생성
     private String generateDescription(String category, int score, int facility1, int facility2) {
         switch (category) {
             case "자연감시":
-                if (score >= 85) return String.format("밝고 CCTV %d개 다수 존재", facility1);
+                if (score >= 85) return String.format("CCTV %d개, 가로등 %d개로 감시 우수", facility1, facility2);
                 if (score >= 70) return "CCTV와 조명이 적절히 배치됨";
                 return "CCTV와 조명이 부족함";
 
             case "접근통제":
-                if (score >= 80) return "통제된 출입구와 울타리 존재";
-                if (score >= 60) return "개방형 골목 다수 존재";
+                // facility1: 경찰서, facility2: CCTV
+                if (score >= 80) {
+                    if (facility1 > 0) {
+                        return String.format("경찰서 %d개소로 접근 통제 우수", facility1);
+                    }
+                    return "CCTV 등으로 접근 감시 양호";
+                }
+                if (score >= 60) {
+                    return "개방형 골목 다수 존재";
+                }
                 return "통제되지 않은 골목 다수";
 
             case "영역성":
-                if (score >= 80) return "상가/주택 혼합";
-                if (score >= 60) return "주거 지역";
+                // facility1: 학교, facility2: 편의점
+                if (score >= 80) {
+                    if (facility1 > 0) {
+                        return String.format("학교 %d개소 인근으로 영역성 높음", facility1);
+                    }
+                    return "상가/주택 혼합으로 영역성 양호";
+                }
+                if (score >= 60) {
+                    return "주거 지역으로 영역성 보통";
+                }
                 return "영역성 불분명";
 
             case "활동성":
-                if (score >= 80) return "주간/야간 활발한 유동인구";
-                if (score >= 60) return "야간 인적 드묾";
+                // facility1: 편의점
+                if (score >= 80) {
+                    return String.format("편의점 %d개로 유동인구 활발", facility1);
+                }
+                if (score >= 60) {
+                    return "야간 인적 드묾";
+                }
                 return "전반적으로 인적 드묾";
 
             case "유지관리":
-                if (score >= 85) return "조명/청결 양호";
-                if (score >= 70) return "조명/청결 보통";
+                // facility1: 가로등
+                if (score >= 85) {
+                    return String.format("가로등 %d개로 조명/청결 양호", facility1);
+                }
+                if (score >= 70) {
+                    return "조명/청결 보통";
+                }
                 return "조명/청결 관리 필요";
 
             default:
@@ -217,11 +249,11 @@ public class ReportService {
     // 종합 등급 계산
     private String calculateOverallGrade(double cptedAvg) {
         String grade;
-        if (cptedAvg >= 4.0) grade = "S";
-        else if (cptedAvg >= 3.0) grade = "A";
-        else if (cptedAvg >= 2.0) grade = "B";
-        else if (cptedAvg >= 1.0) grade = "C";
-        else grade = "D";
+        if (cptedAvg >= 4.0) grade = "A";
+        else if (cptedAvg >= 3.0) grade = "B";
+        else if (cptedAvg >= 2.0) grade = "C";
+        else if (cptedAvg >= 1.0) grade = "D";
+        else grade = "F";
 
         int scaledScore = (int) Math.min(cptedAvg * 20, 100);
         return String.format("%s (%d점)", grade, scaledScore);

@@ -2,15 +2,12 @@ package likelion._th.ganzithon.dto.response;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import likelion._th.ganzithon.domain.LatLng;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
+import lombok.*;
 
 import java.time.LocalDateTime;
 import java.util.List;
 
-@Getter
+@Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
@@ -21,7 +18,7 @@ public class ReportResponse {
     private ReportDetail report;
 
     // 리포트 상세 내용
-    @Getter
+    @Data
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
@@ -48,7 +45,7 @@ public class ReportResponse {
     }
 
     // 경로 요약 정보
-    @Getter
+    @Data
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
@@ -67,7 +64,7 @@ public class ReportResponse {
     }
 
     // CPTED 5대 평가
-    @Getter
+    @Data
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
@@ -94,7 +91,7 @@ public class ReportResponse {
     }
 
     // CPTED 개별 항목
-    @Getter
+    @Data
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
@@ -105,7 +102,7 @@ public class ReportResponse {
     }
 
     // 시설물 집계
-    @Getter
+    @Data
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
@@ -127,7 +124,7 @@ public class ReportResponse {
     }
 
     // 구간별 안내
-    @Getter
+    @Data
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
