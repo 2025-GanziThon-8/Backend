@@ -4,6 +4,7 @@ import likelion._th.ganzithon.client.TmapsClient;
 import likelion._th.ganzithon.client.UpstageAiClient;
 import likelion._th.ganzithon.dto.RouteAnalysisData;
 import likelion._th.ganzithon.dto.request.PathSearchRequest;
+import likelion._th.ganzithon.dto.request.ReportRequest;
 import likelion._th.ganzithon.dto.response.PathInfo;
 import likelion._th.ganzithon.dto.response.PathSearchResponse;
 import lombok.RequiredArgsConstructor;
@@ -36,8 +37,9 @@ public class PathService {
             log.info("경유지 포함: ({},{})", request.getWaypointLat(), request.getWaypointLng());
         }
 
-        // 1. 구글 api로 경로 조회
-        List<TmapsClient.TmapRoute> tmapRoutes = tmapsClient.getRoutes(request.getStartLat(),
+        // 1. 티맵 api로 경로 조회
+        List<TmapsClient.TmapRoute> tmapRoutes = tmapsClient.getRoutes(
+                request.getStartLat(),
                 request.getStartLng(),
                 request.getEndLat(),
                 request.getEndLng(),
@@ -53,7 +55,7 @@ public class PathService {
 
         //2. 각 경로에 대해 CPTED 분석 수행
         List<RouteAnalysisData> analyzedRoutes = new ArrayList<>();
-        List<String> enncodedPolylines = new ArrayList<>();
+        List<List<ReportRequest.Coordinate>> polylines = new ArrayList<>();
 
         for (int i = 0; i < tmapRoutes.size(); i++) {
             TmapsClient.TmapRoute tmapRoute = tmapRoutes.get(i);
@@ -67,7 +69,7 @@ public class PathService {
             );
 
             analyzedRoutes.add(analyzed);
-            enncodedPolylines.add(tmapRoute.getEncodedPolyline()); // 원본 저장
+            polylines.add(tmapRoute.getEncodedPolyline()); // 원본 저장
         }
 
         // 3. 3개의 경로 선택
@@ -80,7 +82,7 @@ public class PathService {
         List<PathInfo> pathInfos = new ArrayList<>();
         for(RouteAnalysisData route : selectedRoutes) {
             int originalIndex = analyzedRoutes.indexOf((route));
-            String encodedPolyline = enncodedPolylines.get(originalIndex);
+            List<ReportRequest.Coordinate> encodedPolyline = polylines.get(originalIndex);
             boolean isRecommended = route.getRouteId().equals(recommendedRouteId);
 
             pathInfos.add(convertToPathInfo(route, isRecommended, encodedPolyline));
@@ -141,7 +143,7 @@ public class PathService {
 
     // ReportResponse -> PathInfo 변환
     private PathInfo convertToPathInfo(
-            RouteAnalysisData route, boolean isRecommended, String encodedPolyline) {
+            RouteAnalysisData route, boolean isRecommended, List<ReportRequest.Coordinate> encodedPolyline) {
         // 종합 등급 계산
         String summaryGrade = calculateGrade(route.getCptedAvg());
 

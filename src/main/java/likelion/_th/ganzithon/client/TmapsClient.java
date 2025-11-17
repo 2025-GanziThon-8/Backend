@@ -2,6 +2,7 @@ package likelion._th.ganzithon.client;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import likelion._th.ganzithon.domain.LatLng;
+import likelion._th.ganzithon.dto.request.ReportRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
@@ -120,7 +121,7 @@ public class TmapsClient {
         // 총 거리와 시간 추출
         int totalDistance = 0;
         int totalTime = 0;
-        List<LatLng> coordinates = new ArrayList<>();
+        List<ReportRequest.Coordinate> coordinates = new ArrayList<>();
         StringBuilder polylineBuilder = new StringBuilder();
 
         for (JsonNode feature : features) {
@@ -144,31 +145,26 @@ public class TmapsClient {
                         if (coord.isArray() && coord.size() >= 2) {
                             double lng = coord.get(0).asDouble();
                             double lat = coord.get(1).asDouble();
-                            coordinates.add(new LatLng(lat, lng));
+                            coordinates.add(new ReportRequest.Coordinate(lat, lng));
                         }
                     }
                 }
             }
         }
 
-        // 좌표를 Polyline으로 인코딩 (간단하게 JSON 문자열로)
-        String encodedPolyline = encodeCoordinates(coordinates);
-
         return TmapRoute.builder()
                 .distance(totalDistance)
                 .duration(totalTime)
                 .coordinates(coordinates)
-                .encodedPolyline(encodedPolyline)
+                .encodedPolyline(coordinates)
                 .build();
     }
 
-    /**
-     * 좌표 인코딩 (간단한 JSON 형식)
-     */
-    private String encodeCoordinates(List<LatLng> coordinates) {
+    // 좌표 인코딩 (간단한 JSON 형식)
+    private String encodeCoordinates(List<ReportRequest.Coordinate> coordinates) {
         StringBuilder sb = new StringBuilder("[");
         for (int i = 0; i < coordinates.size(); i++) {
-            LatLng coord = coordinates.get(i);
+            ReportRequest.Coordinate coord = coordinates.get(i);
             sb.append(String.format("{\"lat\":%.6f,\"lng\":%.6f}", coord.getLat(), coord.getLng()));
             if (i < coordinates.size() - 1) {
                 sb.append(",");
@@ -178,9 +174,7 @@ public class TmapsClient {
         return sb.toString();
     }
 
-    /**
-     * 경유지 계산 (출발지-도착지 중간에서 북쪽/남쪽으로 이동)
-     */
+    // 경유지 계산 (출발지-도착지 중간에서 북쪽/남쪽으로 이동)
     private LatLng calculateWaypoint(double startLat, double startLng,
                                      double endLat, double endLng,
                                      String direction) {
@@ -198,15 +192,13 @@ public class TmapsClient {
         }
     }
 
-    /**
-     * Tmap 경로 데이터 모델
-     */
+    // Tmap 경로 데이터 모델
     @lombok.Getter
     @lombok.Builder
     public static class TmapRoute {
         private Integer distance;  // 미터
         private Integer duration;  // 초
-        private List<LatLng> coordinates;
-        private String encodedPolyline;
+        private List<ReportRequest.Coordinate> coordinates;
+        private List<ReportRequest.Coordinate> encodedPolyline;
     }
 }

@@ -6,6 +6,7 @@ import likelion._th.ganzithon.domain.LatLng;
 import likelion._th.ganzithon.dto.RouteAnalysisData;
 import likelion._th.ganzithon.dto.request.ReportRequest;
 import likelion._th.ganzithon.dto.response.ReportResponse;
+import likelion._th.ganzithon.util.PercentileCalculator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -24,11 +25,12 @@ import java.util.stream.Collectors;
 public class ReportService {
     private final CptedService cptedService;
     private final UpstageAiClient upstageAiClient;
+    private PercentileCalculator percentileCalc;
 
     public ReportResponse generateReport(ReportRequest request) throws JsonProcessingException, ExecutionException, InterruptedException, TimeoutException {
         // 1. polyline 좌표 반환
-        List<LatLng> coordinates = request.getCoordinates().stream()
-                .map(c -> new LatLng(c.getLat(), c.getLng()))
+        List<ReportRequest.Coordinate> coordinates = request.getCoordinates().stream()
+                .map(c -> new ReportRequest.Coordinate(c.getLat(), c.getLng()))
                 .collect(Collectors.toList());
 
         // 2. CPTED 전체 분석 (구간별 포함)
@@ -88,37 +90,46 @@ public class ReportService {
         int police = analysis.getPoliceCount();
         int school = analysis.getSchoolCount();
 
-        // 1. 자연감시
-        int naturalSurveillance = calculateScore(cctv * 4 + light * 3, 70);
+        // Percentile기반으로 점수만 계산
+        int cctvPercentile = cptedService.getPercentileScore("cctv", cctv);
+        int lightPercentile = cptedService.getPercentileScore("light", light);
+        int storePercentile = cptedService.getPercentileScore("store", store);
+        int policePercentile = cptedService.getPercentileScore("police", police);
 
-        // 2. 접근 통제
-        int accessControl = calculateScore(police * 10 + (cctv + light + store), 40);
-
-        //3. 영역성 강화
-        int territoriality = calculateScore(school * 10 + store * 5, 50);
-
-        // 4. 활동성 증대
-        int activitySupport = calculateScore(store * 10, 50);
-
-        // 5. 유지관리
-        int maintenance = calculateScore(light * 4, 60);
+        // 1. 자연감시: cctv 60% + 가로등 40%
+        int naturalScore = (int)(cctvPercentile * 0.6 + lightPercentile * 0.4);
+        // 2. 접근 통제: 경찰서
+        int accessScore = policePercentile;
+        //3. 영역성 강화: 학교
+        int territorialityScore = getSchoolScore(school);
+        // 4. 활동성 증대: 편의점
+        int activityScore = storePercentile;
+        // 5. 유지관리: 가로등
+        int maintenanceScore = lightPercentile;
 
         return ReportResponse.CptedEvaluation.builder()
                 // 자연감시 - cctv, 가로등
-                .naturalSurveillance(buildCptedItem("자연감시", naturalSurveillance,
-                        generateDescription("자연감시", naturalSurveillance, cctv, light)))
+                .naturalSurveillance(buildCptedItem(
+                        "자연감시",
+                        naturalScore,
+                        generateDescription("자연감시", naturalScore, cctv, light)))
                 // 접근 통제 - 경찰서
-                .accessControl(buildCptedItem("접근통제", accessControl,
-                        generateDescription("접근통제", accessControl, police, 0)))
-                // 영역성 강화 - 학교
-                .territoriality(buildCptedItem("영역성 강화", territoriality,
-                        generateDescription("영역성", territoriality, school, 0)))
-                // 활동성 증대 - 편의점
-                .activitySupport(buildCptedItem("활동성 증대", activitySupport,
-                        generateDescription("활동성", activitySupport, store, 0)))
-                // 유지관리 - 가로등
-                .maintenance(buildCptedItem("유지관리", maintenance,
-                        generateDescription("유지관리", maintenance, light, 0)))
+                .accessControl(buildCptedItem(
+                        "접근통제",
+                        accessScore,
+                        generateDescription("접근통제", accessScore, police, 0)))
+                .territoriality(buildCptedItem(
+                        "영역성 강화",
+                        territorialityScore,
+                        generateDescription("영역성", territorialityScore, school, 0)))
+                .activitySupport(buildCptedItem(
+                        "활동성 증대",
+                        activityScore,
+                        generateDescription("활동성", activityScore, store, 0)))
+                .maintenance(buildCptedItem(
+                        "유지관리",
+                        maintenanceScore,
+                        generateDescription("유지관리", maintenanceScore, light, 0)))
                 .facilities(ReportResponse.Facilities.builder()
                         .cctvCount(cctv)
                         .lightCount(light)
@@ -129,9 +140,12 @@ public class ReportService {
                 .build();
     }
 
-    // 점수 계산 (0-100 범위로)
-    private int calculateScore(int rawValue, int baseline) {
-        return Math.min(100, baseline + rawValue);
+    // 학교는 절대값 기준 (개수가 적어서)
+    private int getSchoolScore(int schoolCount) {
+        if (schoolCount >= 3) return 95;
+        if (schoolCount == 2) return 85;
+        if (schoolCount == 1) return 70;
+        return 40;
     }
 
     // CPTED 항목 생성
@@ -144,58 +158,64 @@ public class ReportService {
     }
 
     // <CPTED 평가> 항목별, 점수별 설명 생성
-    private String generateDescription(String category, int score, int facility1, int facility2) {
+    private String generateDescription(
+            String category, int score, int facility1, int facility2) {
+
         switch (category) {
             case "자연감시":
-                if (score >= 85) return String.format("CCTV %d개, 가로등 %d개로 감시 우수", facility1, facility2);
-                if (score >= 70) return "CCTV와 조명이 적절히 배치됨";
-                return "CCTV와 조명이 부족함";
+                if (score >= 85) {
+                    return "밝고 CCTV 다수 존재";
+                } else if (score >= 70) {
+                    return "CCTV와 조명이 적절히 배치됨";
+                } else if (score >= 50) {
+                    return "CCTV 또는 조명 보완 필요";
+                } else {
+                    return "CCTV와 조명 부족";
+                }
 
             case "접근통제":
-                // facility1: 경찰서, facility2: CCTV
                 if (score >= 80) {
-                    if (facility1 > 0) {
-                        return String.format("경찰서 %d개소로 접근 통제 우수", facility1);
-                    }
-                    return "CCTV 등으로 접근 감시 양호";
-                }
-                if (score >= 60) {
+                    return "통제된 출입구와 감시 체계 존재";
+                } else if (score >= 65) {
                     return "개방형 골목 다수 존재";
+                } else if (score >= 45) {
+                    return "통제되지 않은 골목 존재";
+                } else {
+                    return "접근 통제 미흡";
                 }
-                return "통제되지 않은 골목 다수";
 
             case "영역성":
-                // facility1: 학교, facility2: 편의점
                 if (score >= 80) {
-                    if (facility1 > 0) {
-                        return String.format("학교 %d개소 인근으로 영역성 높음", facility1);
-                    }
-                    return "상가/주택 혼합으로 영역성 양호";
+                    return "상가/주택 혼합";
+                } else if (score >= 65) {
+                    return "주거 중심 영역";
+                } else if (score >= 45) {
+                    return "영역성 보통";
+                } else {
+                    return "영역성 불분명";
                 }
-                if (score >= 60) {
-                    return "주거 지역으로 영역성 보통";
-                }
-                return "영역성 불분명";
 
             case "활동성":
-                // facility1: 편의점
                 if (score >= 80) {
-                    return String.format("편의점 %d개로 유동인구 활발", facility1);
-                }
-                if (score >= 60) {
+                    return "유동인구 활발";
+                } else if (score >= 65) {
+                    return "일부 시간대 인적 드묾";
+                } else if (score >= 45) {
                     return "야간 인적 드묾";
+                } else {
+                    return "전반적으로 인적 드묾";
                 }
-                return "전반적으로 인적 드묾";
 
             case "유지관리":
-                // facility1: 가로등
                 if (score >= 85) {
-                    return String.format("가로등 %d개로 조명/청결 양호", facility1);
-                }
-                if (score >= 70) {
+                    return "조명/청결 양호";
+                } else if (score >= 70) {
                     return "조명/청결 보통";
+                } else if (score >= 50) {
+                    return "일부 구간 관리 필요";
+                } else {
+                    return "조명/청결 관리 필요";
                 }
-                return "조명/청결 관리 필요";
 
             default:
                 return "";
@@ -249,11 +269,11 @@ public class ReportService {
     // 종합 등급 계산
     private String calculateOverallGrade(double cptedAvg) {
         String grade;
-        if (cptedAvg >= 4.0) grade = "A";
-        else if (cptedAvg >= 3.0) grade = "B";
-        else if (cptedAvg >= 2.0) grade = "C";
-        else if (cptedAvg >= 1.0) grade = "D";
-        else grade = "F";
+        if (cptedAvg >= 4.0) grade = "A"; // 80~100점
+        else if (cptedAvg >= 3.0) grade = "B"; // 60~79점
+        else if (cptedAvg >= 2.0) grade = "C"; // 40~59점
+        else if (cptedAvg >= 1.0) grade = "D"; // 20~39점
+        else grade = "F"; // 0~19점
 
         int scaledScore = (int) Math.min(cptedAvg * 20, 100);
         return String.format("%s (%d점)", grade, scaledScore);
