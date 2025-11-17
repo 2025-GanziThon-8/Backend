@@ -1,6 +1,7 @@
 package likelion._th.ganzithon.dto;
 
 import likelion._th.ganzithon.domain.LatLng;
+import likelion._th.ganzithon.dto.request.ReportRequest;
 import lombok.*;
 
 import java.util.List;
@@ -15,7 +16,7 @@ public class RouteAnalysisData {
     private String routeId;              // 경로 ID (예: "route-1")
     private Integer distance;            // 거리 (미터)
     private Integer time;                // 시간 (초)
-    private List<LatLng> coordinates;    // 좌표 목록
+    private List<ReportRequest.Coordinate> coordinates;    // 좌표 목록
 
     // CPTED 분석 결과 (전체 경로)
     private Double cptedAvg;             // CPTED 평균 점수 (0.0 ~ 5.0)

@@ -40,7 +40,7 @@ public class AnalysisController {
     }
 
     @PostMapping("/report")
-    public ResponseEntity<ReportResponse> generateResport(
+    public ResponseEntity<ReportResponse> generateReport(
             @RequestBody ReportRequest request
     ) throws JsonProcessingException, ExecutionException, InterruptedException, TimeoutException {
         return ResponseEntity.ok(reportService.generateReport(request));

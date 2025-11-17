@@ -1,6 +1,7 @@
 package likelion._th.ganzithon.dto.response;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import likelion._th.ganzithon.dto.request.ReportRequest;
 import lombok.Builder;
 import lombok.Data;
 import lombok.Getter;
@@ -19,7 +20,8 @@ public class PathInfo {
     private Integer time;
     // 거리 (m)
     private Integer distance;
-    private String polyline;
+//    private String polyline;
+    private List<ReportRequest.Coordinate> polyline;
     // CPTED 평균 점수
     private Map<String, Double> cpted;
     // 종합 등금: A(90점)
