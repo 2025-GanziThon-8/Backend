@@ -49,5 +49,6 @@ build/
 *.env
 
 # Firebase
+src/main/resources/serviceAccountKey.json
 serviceAccountKey.json
 *firebase*.json
