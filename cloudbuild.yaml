@@ -16,3 +16,6 @@ steps:
           --cpu 1 \
           --memory 512Mi \
           --timeout 60
+        
+        options:
+          logging: CLOUD_LOGGING_ONLY
