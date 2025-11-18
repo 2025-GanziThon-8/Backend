@@ -4,6 +4,7 @@ import com.google.firebase.database.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.util.concurrent.CompletableFuture;
@@ -13,11 +14,15 @@ import java.util.concurrent.TimeoutException;
 
 @Component
 @RequiredArgsConstructor
+@ConditionalOnProperty(name = "firebase.enabled", havingValue = "true")
 @Slf4j
 // Firebase 접근 담당
 public class FirebaseClient {
 
 //    private final FirebaseDatabase firebaseDatabase;
+
+    @Value("${firebase.enabled:false}")
+    private boolean firebaseEnabled;
 
     // 테스트 모드 활성화 (Firebase 키 받으면 false로 변경)
     @Value("${firebase.test-mode:true}")
@@ -26,31 +31,36 @@ public class FirebaseClient {
     // db에서 격자 셀 데이터 조회
     public SafetyCell getCellData(String cellId) throws ExecutionException, InterruptedException, TimeoutException {
         // ========== 테스트 모드 (Mock 데이터) ==========
-        if (testMode) {
+        if (testMode || !firebaseEnabled) {
             log.debug("[TEST MODE] Mock 데이터 반환: {}", cellId);
             return generateMockData(cellId);
         }
-        
-//        DatabaseReference ref = firebaseDatabase.getReference("cpted_grid").child(cellId);
-//        CompletableFuture<SafetyCell> future = new CompletableFuture<>();
-//
-//        ref.addListenerForSingleValueEvent(new ValueEventListener() {
-//            @Override
-//            public void onDataChange(DataSnapshot snapshot) {
-//                if (snapshot.exists()) {
-//                    SafetyCell cell = parseSafetyCell(snapshot, cellId);
-//                    future.complete(cell);
-//                } else {
-//                    future.complete(null);
-//                }
-//            }
-//            @Override
-//            public void onCancelled(DatabaseError error) {
-//                future.complete(null);
-//            }
-//        });
-//        return future.get(3, TimeUnit.SECONDS);
-        return null;
+
+        try {
+            DatabaseReference ref = FirebaseDatabase.getInstance().getReference("cpted_grid").child(cellId);
+            CompletableFuture<SafetyCell> future = new CompletableFuture<>();
+
+            ref.addListenerForSingleValueEvent(new ValueEventListener() {
+                @Override
+                public void onDataChange(DataSnapshot snapshot) {
+                    if (snapshot.exists()) {
+                        SafetyCell cell = parseSafetyCell(snapshot, cellId);
+                        future.complete(cell);
+                    } else {
+                        future.complete(null);
+                    }
+                }
+                @Override
+                public void onCancelled(DatabaseError error) {
+                    future.complete(null);
+                }
+            });
+            return future.get(3, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            log.error("Firebase 조회 실패, Mock 데이터 반환: {}", e.getMessage());
+            return generateMockData(cellId);
+        }
+
     }
 
     // --------------------테스트용 Mock 데이터 생성 -------------------------
