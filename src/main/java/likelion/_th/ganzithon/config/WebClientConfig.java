@@ -15,8 +15,8 @@ public class WebClientConfig {
     @Value("${external-api.upstage.base-url}")
     private String upstageBaseUrl;
 
-    @Value("${external-api.google.base-url}")
-    private String googleMapBaseUrl;
+//    @Value("${external-api.google.base-url}")
+//    private String googleMapBaseUrl;
 
     @Bean(name = "tmapClient")
     public WebClient tmapClient(@Value("${external-api.tmap.api-key}") String apiKey) {
@@ -26,12 +26,12 @@ public class WebClientConfig {
                 .build();
     }
 
-    @Bean(name = "googleMapClient")
-    public WebClient googleMapClient() {
-        return WebClient.builder()
-                .baseUrl(googleMapBaseUrl)
-                .build();
-    }
+//    @Bean(name = "googleMapClient")
+//    public WebClient googleMapClient() {
+//        return WebClient.builder()
+//                .baseUrl(googleMapBaseUrl)
+//                .build();
+//    }
 
     @Bean(name = "upstageClient")
     public WebClient upstageClient(@Value("${external-api.upstage.api-key}") String apiKey) {
