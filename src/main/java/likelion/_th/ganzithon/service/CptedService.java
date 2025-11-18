@@ -6,6 +6,7 @@ import likelion._th.ganzithon.dto.request.ReportRequest;
 import likelion._th.ganzithon.util.PercentileCalculator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
@@ -15,6 +16,7 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@ConditionalOnProperty(name = "firebase.enabled", havingValue = "true", matchIfMissing = true)
 @Slf4j
 public class CptedService {
     private final FirebaseClient firebaseClient;
@@ -291,9 +293,12 @@ public class CptedService {
     //격자 ID 생성 (200m 단위 → 0.002도)
     //위도/경도를 5000배 → 소수점 5자리까지 사용
     private String getCellId(double lat, double lng) {
-        double cellLat = Math.floor(lat * 5000) / 5000;
-        double cellLng = Math.floor(lng * 5000) / 5000;
-        return String.format("%.5f_%.5f", cellLat, cellLng);
+        final double GRID_CELL_SIZE = 0.002;
+
+        int latKey = (int) Math.floor(lat / GRID_CELL_SIZE);
+        int lngKey = (int) Math.floor(lng / GRID_CELL_SIZE);
+
+        return latKey + "_" + lngKey;
     }
 
     // 구간 통계 내부 클래스

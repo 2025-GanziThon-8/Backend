@@ -1,5 +1,10 @@
 package likelion._th.ganzithon.client;
 
+import com.google.api.core.ApiFuture;
+import com.google.cloud.firestore.CollectionReference;
+import com.google.cloud.firestore.DocumentReference;
+import com.google.cloud.firestore.DocumentSnapshot;
+import com.google.cloud.firestore.Firestore;
 import com.google.firebase.database.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -19,7 +24,7 @@ import java.util.concurrent.TimeoutException;
 // Firebase 접근 담당
 public class FirebaseClient {
 
-//    private final FirebaseDatabase firebaseDatabase;
+    private final Firestore firestore;
 
     @Value("${firebase.enabled:false}")
     private boolean firebaseEnabled;
@@ -37,25 +42,43 @@ public class FirebaseClient {
         }
 
         try {
-            DatabaseReference ref = FirebaseDatabase.getInstance().getReference("cpted_grid").child(cellId);
-            CompletableFuture<SafetyCell> future = new CompletableFuture<>();
+            // 1. Collection 지정
+            CollectionReference collection = firestore.collection("cpted_grid");
+            // 2. Document ID로 조회 (cellId가 Document ID가 됨)
+            DocumentReference docRef = collection.document(cellId);
 
-            ref.addListenerForSingleValueEvent(new ValueEventListener() {
-                @Override
-                public void onDataChange(DataSnapshot snapshot) {
-                    if (snapshot.exists()) {
-                        SafetyCell cell = parseSafetyCell(snapshot, cellId);
-                        future.complete(cell);
-                    } else {
-                        future.complete(null);
-                    }
-                }
-                @Override
-                public void onCancelled(DatabaseError error) {
-                    future.complete(null);
-                }
-            });
-            return future.get(3, TimeUnit.SECONDS);
+            // 3. 비동기 조회 실행
+            ApiFuture<DocumentSnapshot> future = docRef.get();
+            DocumentSnapshot snapshot = future.get(3, TimeUnit.SECONDS);
+
+            if (snapshot.exists()) {
+                log.info("Firestore 조회 성공: Collection='{}', Document ID='{}'", "cpted_grid", cellId);
+                SafetyCell cell = parseSafetyCell(snapshot, cellId);
+                return cell;
+            } else {
+                log.warn("Firestore 조회: Document ID '{}'를 찾을 수 없음", cellId);
+                return null; // 문서가 존재하지 않으면 null 반환
+            }
+
+//            DatabaseReference ref = FirebaseDatabase.getInstance().getReference("cpted_grid").child(cellId);
+//            CompletableFuture<SafetyCell> future = new CompletableFuture<>();
+//
+//            ref.addListenerForSingleValueEvent(new ValueEventListener() {
+//                @Override
+//                public void onDataChange(DataSnapshot snapshot) {
+//                    if (snapshot.exists()) {
+//                        SafetyCell cell = parseSafetyCell(snapshot, cellId);
+//                        future.complete(cell);
+//                    } else {
+//                        future.complete(null);
+//                    }
+//                }
+//                @Override
+//                public void onCancelled(DatabaseError error) {
+//                    future.complete(null);
+//                }
+//            });
+//            return future.get(3, TimeUnit.SECONDS);
         } catch (Exception e) {
             log.error("Firebase 조회 실패, Mock 데이터 반환: {}", e.getMessage());
             return generateMockData(cellId);
@@ -94,14 +117,14 @@ public class FirebaseClient {
     }
 
     // db snapshot을 SafetyCell로 파싱
-    private SafetyCell parseSafetyCell(DataSnapshot snapshot, String cellId) {
+    private SafetyCell parseSafetyCell(DocumentSnapshot snapshot, String cellId) {
         try {
-            Integer cctvCount = snapshot.child("cctvCount").getValue(Integer.class);
-            Integer lightCount = snapshot.child("lightCount").getValue(Integer.class);
-            Integer storeCount = snapshot.child("storeCount").getValue(Integer.class);
-            Integer policeCount = snapshot.child("policeCount").getValue(Integer.class);
-            Integer schoolCount = snapshot.child("schoolCount").getValue(Integer.class);
-            Double cptedScore = snapshot.child("cptedScore").getValue(Double.class);
+            Integer cctvCount = snapshot.get("cctvCount", Integer.class);
+            Integer lightCount = snapshot.get("lightCount", Integer.class);
+            Integer storeCount = snapshot.get("storeCount", Integer.class);
+            Integer policeCount = snapshot.get("policeCount", Integer.class);
+            Integer schoolCount = snapshot.get("schoolCount", Integer.class);
+            Double cptedScore = snapshot.get("cptedScore", Double.class);
 
             return SafetyCell.builder()
                     .cellId(cellId)
