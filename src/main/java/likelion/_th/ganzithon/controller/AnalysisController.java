@@ -17,6 +17,7 @@ import java.util.concurrent.TimeoutException;
 
 @RestController
 @RequestMapping("/api/v1/analysis")
+@CrossOrigin(origins = "*")
 @RequiredArgsConstructor
 public class AnalysisController {
 
