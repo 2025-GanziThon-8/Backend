@@ -1,5 +1,6 @@
 package likelion._th.ganzithon.dto.response;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import likelion._th.ganzithon.dto.request.ReportRequest;
 import lombok.Builder;
@@ -20,7 +21,8 @@ public class PathInfo {
     private Integer time;
     // 거리 (m)
     private Integer distance;
-//    private String polyline;
+    //private String polyline;
+    @JsonIgnore
     private List<ReportRequest.Coordinate> polyline;
     // CPTED 평균 점수
     private Map<String, Double> cpted;
