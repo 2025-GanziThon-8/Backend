@@ -1,0 +1,18 @@
+steps:
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        gcloud run deploy safe-route-api \
+          --source . \
+          --region asia-northeast3 \
+          --service-account=${_SERVICE_ACCOUNT} \
+          --allow-unauthenticated \
+          --set-env-vars "FIREBASE_PROJECT_ID=ganzithon-39944" \
+          --set-secrets "UPSTAGE_API_KEY=UPSTAGE_API_KEY:latest,TMAP_API_KEY=TMAP_API_KEY:latest" \
+          --min-instances 0 \
+          --max-instances 3 \
+          --cpu 1 \
+          --memory 512Mi \
+          --timeout 60
