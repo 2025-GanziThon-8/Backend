@@ -7,12 +7,15 @@ import com.google.cloud.firestore.DocumentSnapshot;
 import com.google.cloud.firestore.Firestore;
 import com.google.firebase.database.*;
 import lombok.RequiredArgsConstructor;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -21,7 +24,6 @@ import java.util.concurrent.TimeoutException;
 @RequiredArgsConstructor
 @ConditionalOnProperty(name = "firebase.enabled", havingValue = "true")
 @Slf4j
-// Firebase 접근 담당
 public class FirebaseClient {
 
     private final Firestore firestore;
@@ -29,11 +31,9 @@ public class FirebaseClient {
     @Value("${firebase.enabled:false}")
     private boolean firebaseEnabled;
 
-    // 테스트 모드 활성화 (Firebase 키 받으면 false로 변경)
     @Value("${firebase.test-mode:true}")
     private boolean testMode;
 
-    // db에서 격자 셀 데이터 조회
     public SafetyCell getCellData(String cellId) throws ExecutionException, InterruptedException, TimeoutException {
         // ========== 테스트 모드 (Mock 데이터) ==========
         if (testMode || !firebaseEnabled) {
@@ -148,8 +148,11 @@ public class FirebaseClient {
         }
     }
 
-    @lombok.Getter
-    @lombok.Builder
+    // SafetyCell 내부 클래스는 Firestore가 객체로 변환할 때 사용합니다.
+    @Getter
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
     public static class SafetyCell {
         private String cellId;
         private Integer cctvCount;
@@ -159,27 +162,4 @@ public class FirebaseClient {
         private Integer schoolCount;
         private Double cptedScore;
     }
-
-/*
-    데이터 예시 가정
-   {
-    "cpted_grid": {
-        "37.54400_127.05570": {
-            "cctvCount": 3,
-            "lightCount": 5,
-            "storeCount": 1,
-            "policeCount": 0,
-            "cptedScore": 1.9
-        },
-        "37.54600_127.05770": {
-            "cctvCount": 2,
-            "lightCount": 8,
-            "storeCount": 0,
-            "policeCount": 0,
-            "cptedScore": 2.6
-            }
-        }
-    }
-*/
-
 }

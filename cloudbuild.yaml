@@ -17,5 +17,5 @@ steps:
           --memory 512Mi \
           --timeout 60
         
-options:
-  logging: CLOUD_LOGGING_ONLY
+        options:
+          default_logs_bucket_behavior: REGIONAL_USER_OWNED_BUCKET
