@@ -21,13 +21,15 @@ import java.util.concurrent.TimeoutException;
 // 경로 조회
 public class PathService {
 
-//    private final GoogleMapsClient googleMapsClient;
+    //    private final GoogleMapsClient googleMapsClient;
     private final TmapsClient tmapsClient;
     private final UpstageAiClient upstageAiClient;
     private final CptedService cptedService;
 
     // 선택할 3개의 경로를 탐색
-    public PathSearchResponse searchPaths(PathSearchRequest request) throws ExecutionException, InterruptedException, TimeoutException {
+    public PathSearchResponse searchPaths(PathSearchRequest request)
+            throws ExecutionException, InterruptedException, TimeoutException {
+
         log.info("경로 검색 시작: ({},{}) → ({},{})",
                 request.getStartLat(), request.getStartLng(),
                 request.getEndLat(), request.getEndLng());
@@ -53,7 +55,7 @@ public class PathService {
 
         log.info("티맵에서 {} 개 경로 수신", tmapRoutes.size());
 
-        //2. 각 경로에 대해 CPTED 분석 수행
+        // 2. 각 경로에 대해 CPTED 분석 수행
         List<RouteAnalysisData> analyzedRoutes = new ArrayList<>();
         List<List<ReportRequest.Coordinate>> polylines = new ArrayList<>();
 
@@ -69,26 +71,41 @@ public class PathService {
             );
 
             analyzedRoutes.add(analyzed);
-            polylines.add(tmapRoute.getEncodedPolyline()); // 원본 저장
+            // 원본 폴리라인 좌표 저장
+            polylines.add(tmapRoute.getEncodedPolyline());
         }
 
         // 3. 3개의 경로 선택
         List<RouteAnalysisData> selectedRoutes = selectThreeRoutes(analyzedRoutes);
+
+        // 점수 계산용 최소 거리/시간 (선택된 3개 경로 기준)
+        int minDistance = selectedRoutes.stream()
+                .mapToInt(RouteAnalysisData::getDistance)
+                .min()
+                .orElse(1);
+
+        int minTime = selectedRoutes.stream()
+                .mapToInt(RouteAnalysisData::getTime)
+                .min()
+                .orElse(1);
 
         // 4. AI 추천 경로 선택
         String recommendedRouteId = upstageAiClient.selectRecommendedRoute(selectedRoutes);
 
         // 5. PathInfo로 변환
         List<PathInfo> pathInfos = new ArrayList<>();
-        for(RouteAnalysisData route : selectedRoutes) {
-            int originalIndex = analyzedRoutes.indexOf((route));
+        for (RouteAnalysisData route : selectedRoutes) {
+            int originalIndex = analyzedRoutes.indexOf(route);
             List<ReportRequest.Coordinate> encodedPolyline = polylines.get(originalIndex);
             boolean isRecommended = route.getRouteId().equals(recommendedRouteId);
 
-            pathInfos.add(convertToPathInfo(route, isRecommended, encodedPolyline));
+            pathInfos.add(
+                    convertToPathInfo(route, isRecommended, encodedPolyline, minDistance, minTime)
+            );
         }
 
-        log.info("경로 검색 완료: 총 {} 개 경로 반환 (추천: {})", pathInfos.size(), recommendedRouteId);
+        log.info("경로 검색 완료: 총 {} 개 경로 반환 (추천: {})",
+                pathInfos.size(), recommendedRouteId);
 
         return PathSearchResponse.builder()
                 .message("후보 경로 조회 성공")
@@ -110,10 +127,11 @@ public class PathService {
                 .orElse(allRoutes.get(0));
         selected.add(safest);
 
-        // 2. 일반/빠른 경로
+        // 2. 일반/빠른 경로: 거리 최단
         RouteAnalysisData fastest = allRoutes.stream()
                 .min(Comparator.comparingInt(RouteAnalysisData::getDistance))
                 .orElse(allRoutes.get(2));
+
         if (!fastest.getRouteId().equals(safest.getRouteId())) {
             selected.add(fastest);
         } else {
@@ -124,7 +142,7 @@ public class PathService {
                     .orElse(allRoutes.get(1)));
         }
 
-        // 3. 중간 경로
+        // 3. 중간 경로: 안전도 & 거리 균형
         RouteAnalysisData balanced = allRoutes.stream()
                 .filter(r -> !selected.contains(r))
                 .max(Comparator.comparingDouble(r ->
@@ -141,14 +159,24 @@ public class PathService {
         return selected;
     }
 
-    // ReportResponse -> PathInfo 변환
+    // RouteAnalysisData -> PathInfo 변환
     private PathInfo convertToPathInfo(
-            RouteAnalysisData route, boolean isRecommended, List<ReportRequest.Coordinate> encodedPolyline) {
-        // 종합 등급 계산
-        String summaryGrade = calculateGrade(route.getCptedAvg());
+            RouteAnalysisData route,
+            boolean isRecommended,
+            List<ReportRequest.Coordinate> encodedPolyline,
+            int minDistance,
+            int minTime
+    ) {
+        // 최종 점수 계산 (0~100)
+        double score = calcRouteScore(route, minDistance, minTime);
+        String summaryGrade = toSummaryGrade(score);
 
         // AI 프리뷰 설정
         List<String> aiPreview = upstageAiClient.generateRoutePreview(route);
+
+        log.info("경로 {} 점수 계산: cptedAvg={}, distance={}, time={}, score={}",
+                route.getRouteId(), route.getCptedAvg(),
+                route.getDistance(), route.getTime(), score);
 
         return PathInfo.builder()
                 .id(route.getRouteId())
@@ -162,17 +190,63 @@ public class PathService {
                 .build();
     }
 
-    // CPTED 등급
-    private String calculateGrade(double cptedAvg) {
-        String grade;
-        if (cptedAvg >= 4.0) grade = "A";
-        else if (cptedAvg >= 3.0) grade = "B";
-        else if (cptedAvg >= 2.0) grade = "C";
-        else if (cptedAvg >= 1.0) grade = "D";
-        else grade = "F";
+    // ================== 점수/등급 계산 유틸 ==================
 
-        int scaledScore = (int) Math.min(cptedAvg * 20, 100);
-        return String.format("%s (%d점)", grade, scaledScore);
+    /**
+     * 경로별 최종 점수 0~100 계산
+     * - 70점: CPTED 평균 (0~30점 → 0~70점 스케일링)
+     * - 20점: 거리 (선택된 경로 중 가장 짧은 거리 = 20점)
+     * - 10점: 시간 (선택된 경로 중 가장 짧은 시간 = 10점)
+     */
+    private double calcRouteScore(RouteAnalysisData r, int minDistance, int minTime) {
+        // 1) 안전도 점수 (CPTED 평균 0~30 → 0~70)
+        double safetyScore = 0.0;
+        if (r.getCptedAvg() > 0) {
+            safetyScore = Math.min(r.getCptedAvg(), 30.0) / 30.0 * 70.0;
+        }
+
+        // 2) 거리 점수 (가장 짧은 거리 = 20점)
+        double distanceScore = 0.0;
+        if (minDistance > 0 && r.getDistance() > 0) {
+            distanceScore = 20.0 * ((double) minDistance / r.getDistance());
+            if (distanceScore > 20.0) distanceScore = 20.0;
+        }
+
+        // 3) 시간 점수 (가장 짧은 시간 = 10점)
+        double timeScore = 0.0;
+        if (minTime > 0 && r.getTime() > 0) {
+            timeScore = 10.0 * ((double) minTime / r.getTime());
+            if (timeScore > 10.0) timeScore = 10.0;
+        }
+
+        double total = safetyScore + distanceScore + timeScore;
+
+        // 0~100 사이로 클램프
+        if (total < 0) total = 0;
+        if (total > 100) total = 100;
+
+        return Math.round(total * 10.0) / 10.0; // 소수 1자리
+    }
+
+    /**
+     * 점수 → 등급 문자열 변환
+     * 예) 96.3 → "A (96점)"
+     */
+    private String toSummaryGrade(double score) {
+        String grade;
+        if (score >= 90) {
+            grade = "A";
+        } else if (score >= 75) {
+            grade = "B";
+        } else if (score >= 60) {
+            grade = "C";
+        } else if (score >= 40) {
+            grade = "D";
+        } else {
+            grade = "E";
+        }
+        int roundedScore = (int) Math.round(score);
+        return String.format("%s (%d점)", grade, roundedScore);
     }
 
 }
