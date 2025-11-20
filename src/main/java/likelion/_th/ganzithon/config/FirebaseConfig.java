@@ -2,37 +2,40 @@ package likelion._th.ganzithon.config;
 
 import com.google.auth.oauth2.GoogleCredentials;
 import com.google.cloud.firestore.Firestore;
-import com.google.firebase.FirebaseApp;
-import com.google.firebase.FirebaseOptions;
-import com.google.firebase.cloud.FirestoreClient;
-import org.springframework.beans.factory.annotation.Value;
+import com.google.cloud.firestore.FirestoreOptions; // 👈 이게 핵심 Import!
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+
+import java.io.ByteArrayInputStream;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 
 @Configuration
 public class FirebaseConfig {
 
-    @Value("${firebase.database-url}")
-    private String databaseUrl;
-
-    @Bean(destroyMethod = "")
+    @Bean
     public Firestore firestore() throws Exception {
-        GoogleCredentials cred = GoogleCredentials.getApplicationDefault();
+        // 1. Cloud Run 환경변수 가져오기
+        String jsonKey = System.getenv("FIREBASE_KEY");
         String projectId = System.getenv("FIREBASE_PROJECT_ID");
 
-        FirebaseOptions options = FirebaseOptions.builder()
-                .setCredentials(cred)
-                .setProjectId(projectId)
-                .setDatabaseUrl(databaseUrl)
-                .build();
+        GoogleCredentials credentials;
 
-        synchronized (FirebaseConfig.class) {
-            if (FirebaseApp.getApps().isEmpty()) {
-                FirebaseApp.initializeApp(options);
-            }
+        if (jsonKey != null && !jsonKey.isEmpty()) {
+            InputStream serviceAccount = new ByteArrayInputStream(jsonKey.getBytes(StandardCharsets.UTF_8));
+            credentials = GoogleCredentials.fromStream(serviceAccount);
         }
-        return FirestoreClient.getFirestore();
+        else {
+            credentials = GoogleCredentials.getApplicationDefault();
+        }
+
+        FirestoreOptions.Builder builder = FirestoreOptions.newBuilder()
+                .setCredentials(credentials);
+
+        if (projectId != null && !projectId.isEmpty()) {
+            builder.setProjectId(projectId);
+        }
+
+        return builder.build().getService();
     }
 }
-
-
