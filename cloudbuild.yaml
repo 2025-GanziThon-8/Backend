@@ -16,6 +16,6 @@ steps:
           --cpu 1 \
           --memory 512Mi \
           --timeout 60
-        
+
 options:
-  default_logs_bucket_behavior: REGIONAL_USER_OWNED_BUCKET
+  defaultLogsBucketBehavior: REGIONAL_USER_OWNED_BUCKET
