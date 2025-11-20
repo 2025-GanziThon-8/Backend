@@ -12,7 +12,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 @Service
@@ -89,6 +91,15 @@ public class PathService {
                 .min()
                 .orElse(1);
 
+        // 각 경로에 대한 AI 프리뷰를 병렬로 시작
+        Map<String, CompletableFuture<List<String>>> previewFutures = new HashMap<>();
+        for (RouteAnalysisData route : selectedRoutes) {
+            previewFutures.put(
+                    route.getRouteId(),
+                    upstageAiClient.generateRoutePreviewAsync(route)
+            );
+        }
+
         // 4. AI 추천 경로 선택
         String recommendedRouteId = upstageAiClient.selectRecommendedRoute(selectedRoutes);
 
@@ -99,8 +110,19 @@ public class PathService {
             List<ReportRequest.Coordinate> encodedPolyline = polylines.get(originalIndex);
             boolean isRecommended = route.getRouteId().equals(recommendedRouteId);
 
+            // 병렬로 돌려놓은 프리뷰 결과 받기 (타임아웃은 적당히 설정)
+            List<String> aiPreview = previewFutures.get(route.getRouteId())
+                    .join();
+
             pathInfos.add(
-                    convertToPathInfo(route, isRecommended, encodedPolyline, minDistance, minTime)
+                    convertToPathInfo(
+                            route,
+                            isRecommended,
+                            encodedPolyline,
+                            minDistance,
+                            minTime,
+                            aiPreview
+                    )
             );
         }
 
@@ -165,14 +187,12 @@ public class PathService {
             boolean isRecommended,
             List<ReportRequest.Coordinate> encodedPolyline,
             int minDistance,
-            int minTime
+            int minTime,
+            List<String> aiPreview
     ) {
         // 최종 점수 계산 (0~100)
         double score = calcRouteScore(route, minDistance, minTime);
         String summaryGrade = toSummaryGrade(score);
-
-        // AI 프리뷰 설정
-        List<String> aiPreview = upstageAiClient.generateRoutePreview(route);
 
         log.info("경로 {} 점수 계산: cptedAvg={}, distance={}, time={}, score={}",
                 route.getRouteId(), route.getCptedAvg(),
@@ -185,7 +205,7 @@ public class PathService {
                 .polyline(encodedPolyline)
                 .cpted(Map.of("avg", route.getCptedAvg()))
                 .summaryGrade(summaryGrade)
-                .aiPreview(aiPreview)
+                .aiPreview(aiPreview)        // 전달받은 값 그대로 사용
                 .isRecommended(isRecommended)
                 .build();
     }

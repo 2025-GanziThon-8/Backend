@@ -15,20 +15,24 @@ public class FirebaseConfig {
     @Value("${firebase.database-url}")
     private String databaseUrl;
 
-    @Bean
+    @Bean(destroyMethod = "")
     public Firestore firestore() throws Exception {
         GoogleCredentials cred = GoogleCredentials.getApplicationDefault();
         String projectId = System.getenv("FIREBASE_PROJECT_ID");
+
         FirebaseOptions options = FirebaseOptions.builder()
                 .setCredentials(cred)
                 .setProjectId(projectId)
                 .setDatabaseUrl(databaseUrl)
                 .build();
-        if (FirebaseApp.getApps().isEmpty()) {
-            FirebaseApp.initializeApp(options);
+
+        synchronized (FirebaseConfig.class) {
+            if (FirebaseApp.getApps().isEmpty()) {
+                FirebaseApp.initializeApp(options);
+            }
         }
         return FirestoreClient.getFirestore();
     }
-
 }
+
 
