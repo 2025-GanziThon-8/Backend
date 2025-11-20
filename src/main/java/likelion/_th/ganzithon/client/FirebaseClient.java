@@ -40,7 +40,7 @@ public class FirebaseClient {
 
         try {
             DocumentReference docRef = firestore.collection("cpted_grid").document(cellId);
-            DocumentSnapshot snapshot = docRef.get().get(3, TimeUnit.SECONDS);
+            DocumentSnapshot snapshot = docRef.get().get(30, TimeUnit.SECONDS);
 
             if (snapshot.exists()) {
                 log.debug("[DB SUCCESS] Fetched cell: {}", cellId);

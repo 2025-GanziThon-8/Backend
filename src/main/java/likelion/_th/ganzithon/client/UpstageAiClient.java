@@ -9,12 +9,14 @@ import lombok.RequiredArgsConstructor;
 import lombok.Value;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 @Component
 //@RequiredArgsConstructor
@@ -254,4 +256,26 @@ public class UpstageAiClient {
         return preview;
     }
 
+    @Async("aiExecutor")
+    public CompletableFuture<List<String>> generateRoutePreviewAsync(RouteAnalysisData route) {
+        return CompletableFuture.completedFuture(generateRoutePreview(route));
+    }
+
+    @Async("aiExecutor")
+    public CompletableFuture<String> generateDetailReportAsync(
+            String origin,
+            String destination,
+            RouteAnalysisData analysis,
+            ReportResponse.CptedEvaluation eval
+    ) {
+        try {
+            String result = generateDetailReport(origin, destination, analysis, eval);
+            return CompletableFuture.completedFuture(result);
+        } catch (JsonProcessingException e) {
+            log.error("AI 상세 리포트 생성 실패", e);
+            return CompletableFuture.completedFuture(
+                    "AI 리포트 생성 중 오류가 발생했어요. 기본 리포트를 사용합니다."
+            );
+        }
+    }
 }
