@@ -128,6 +128,14 @@ public class UpstageAiClient {
 
     // 경로별 ai_priview용 프롬프트
     private String buildPreviewPrompt(RouteAnalysisData route) {
+        String lightCommentHint;
+        if (route.getLightCount() == 0) {
+            lightCommentHint = "이 경로는 가로등이 거의 없는 경로입니다.";
+        } else if (route.getLightCount() < 5) {
+            lightCommentHint = "이 경로는 가로등이 적은 편입니다.";
+        } else {
+            lightCommentHint = "이 경로는 가로등이 비교적 잘 설치되어 있습니다.";
+        }
         return String.format(
                 "다음은 도보 경로의 안전성 분석 데이터입니다:\n\n" +
                         "【경로 정보】\n" +
@@ -143,6 +151,9 @@ public class UpstageAiClient {
                         "4. 숫자 나열보다는 의미 있는 설명으로 (예: 'CCTV가 많아 안전해요')\n" +
                         "5. 경로의 가장 중요한 특징 3가지만 선택\n" +
                         "6. 긍정적인 면과 주의할 점을 균형있게\n\n" +
+                        "7. 같은 표현을 반복하지 말고, 매번 다른 문장으로 설명해주세요.\n" +
+                        "8. 가로등이 1개 이상이면 '가로등이 없다'라는 표현은 사용하지 말아주세요.\n" +
+                        "참고 정보: " + lightCommentHint + "\n" +
                         "【예시 스타일】\n" +
                         "가로등과 상점이 많은 밝은 길이에요\n" +
                         "이동 거리가 짧고 신호 교차가 적어요\n" +

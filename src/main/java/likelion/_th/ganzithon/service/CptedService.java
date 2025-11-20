@@ -260,9 +260,9 @@ public class CptedService {
     private String getSafetyLevel(double cptedScore, int cctvCount, int lightCount) {
         int totalSafety = cctvCount + lightCount;
 
-        if (cptedScore >= 3.5 && totalSafety >= 5) {
+        if (cptedScore >= 3.0 && totalSafety >= 4) {
             return "안전";
-        } else if (cptedScore >= 2.0 || totalSafety >= 2) {
+        } else if (cptedScore >= 1.5 || totalSafety >= 2) {
             return "주의";
         } else {
             return "위험";
@@ -297,8 +297,10 @@ public class CptedService {
         if (stats.cctvCount == 0 && cctvContribution == 0) {
             lackingFeatures.add("CCTV 없음");
         }
-        if (stats.lightCount <= 1) {
+        if (stats.lightCount == 0) {
             lackingFeatures.add("조명 부족");
+        } else if (stats.lightCount <= 2) {
+            lackingFeatures.add("조금 어두운 편");
         }
 
         List<String> description = new ArrayList<>();
@@ -311,9 +313,10 @@ public class CptedService {
     }
 
     private String formatFeature(String name, int count, double contribution) {
-        if (count >= 5) return name + " 다수";
-        if (count >= 2) return name + " 있음";
-        if (count == 1) return name + " 소수";
+        if (count >= 8) return name + " 매우 많음";
+        if (count >= 4) return name + " 충분함";
+        if (count >= 2) return name + " 어느 정도 있음";
+        if (count == 1) return name + " 소수 존재";
         return "";
     }
 
