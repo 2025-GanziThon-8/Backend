@@ -32,6 +32,9 @@ public class PathService {
     public PathSearchResponse searchPaths(PathSearchRequest request)
             throws ExecutionException, InterruptedException, TimeoutException {
 
+        // 전체 시작 시간
+        long totalStartTime = System.currentTimeMillis();
+
         log.info("경로 검색 시작: ({},{}) → ({},{})",
                 request.getStartLat(), request.getStartLng(),
                 request.getEndLat(), request.getEndLng());
@@ -42,6 +45,8 @@ public class PathService {
         }
 
         // 1. 티맵 api로 경로 조회
+        // 티맵 호출 시작 시간
+        long tmapStartTime = System.currentTimeMillis();
         List<TmapsClient.TmapRoute> tmapRoutes = tmapsClient.getRoutes(
                 request.getStartLat(),
                 request.getStartLng(),
@@ -55,9 +60,14 @@ public class PathService {
             throw new IllegalArgumentException("경로를 찾을 수 없습니다. 출발지와 도착지를 확인해주세요.");
         }
 
+        // 티맵 호출 완료 시간
+        long tmapEndTime = System.currentTimeMillis();
         log.info("티맵에서 {} 개 경로 수신", tmapRoutes.size());
 
         // 2. 각 경로에 대해 CPTED 분석 수행
+        // cpted 분석 시작 시간
+        long cptedStartTime = System.currentTimeMillis();
+
         List<RouteAnalysisData> analyzedRoutes = new ArrayList<>();
         List<List<ReportRequest.Coordinate>> polylines = new ArrayList<>();
 
@@ -76,6 +86,8 @@ public class PathService {
             // 원본 폴리라인 좌표 저장
             polylines.add(tmapRoute.getEncodedPolyline());
         }
+        // cpted 분석 완료 시간
+        long cptedEndTime = System.currentTimeMillis();
 
         // 3. 3개의 경로 선택
         List<RouteAnalysisData> selectedRoutes = selectThreeRoutes(analyzedRoutes);
@@ -90,6 +102,9 @@ public class PathService {
                 .mapToInt(RouteAnalysisData::getTime)
                 .min()
                 .orElse(1);
+
+        // ai 프리뷰 생성 시작 시간
+        long aiStartTime = System.currentTimeMillis();
 
         // 각 경로에 대한 AI 프리뷰를 병렬로 시작
         Map<String, CompletableFuture<List<String>>> previewFutures = new HashMap<>();
@@ -126,8 +141,21 @@ public class PathService {
             );
         }
 
-        log.info("경로 검색 완료: 총 {} 개 경로 반환 (추천: {})",
-                pathInfos.size(), recommendedRouteId);
+        long aiEndTime = System.currentTimeMillis();
+        log.info("🤖 AI 분석 완료: 추천 경로 {} ({}ms)",
+                recommendedRouteId, aiEndTime - aiStartTime);
+
+        // ⏱️ 전체 종료 시간
+        long totalEndTime = System.currentTimeMillis();
+        long totalElapsed = totalEndTime - totalStartTime;
+
+        log.info("✅ 경로 검색 완료: 총 {} 개 경로 반환 (추천: {}) | ⏱️ 전체 소요시간: {}ms (티맵: {}ms, CPTED: {}ms, AI: {}ms)",
+                pathInfos.size(),
+                recommendedRouteId,
+                totalElapsed,
+                tmapEndTime - tmapStartTime,
+                cptedEndTime - cptedStartTime,
+                aiEndTime - aiStartTime);
 
         return PathSearchResponse.builder()
                 .message("후보 경로 조회 성공")

@@ -46,20 +46,20 @@ public class CptedService {
 
         long startTime = System.currentTimeMillis();
 
-        // ✅ Step 1: 필요한 모든 gridId를 먼저 수집 (중복 제거)
+        // Step 1: 필요한 모든 gridId를 먼저 수집 (중복 제거)
         Set<String> uniqueGridIds = coordinates.stream()
                 .map(point -> toGridId(point.getLat(), point.getLng()))
                 .collect(Collectors.toSet());
 
-        log.info("🔍 경로 {}: 총 좌표 {} 개 → 고유 셀 {} 개",
+        log.info("경로 {}: 총 좌표 {} 개 → 고유 셀 {} 개",
                 routeId, coordinates.size(), uniqueGridIds.size());
 
-        // ✅ Step 2: Batch로 한 번에 조회
+        // Step 2: Batch로 한 번에 조회
         Map<String, FirebaseClient.SafetyCell> visitedCells =
                 firebaseClient.getCellDataBatch(new ArrayList<>(uniqueGridIds));
 
         long fetchTime = System.currentTimeMillis();
-        log.info("⏱️ DB 조회 완료: {} ms", fetchTime - startTime);
+        log.info("DB 조회 완료: {} ms", fetchTime - startTime);
 
         // Step 3: 경로 전체 점수 계산
         double sumScoreForPath = 0.0;
@@ -78,7 +78,7 @@ public class CptedService {
         double avgCpted = validPointCount == 0 ? 0.0 : sumScoreForPath / validPointCount;
         avgCpted = Math.round(avgCpted * 10.0) / 10.0;
 
-        log.info("📊 경로 {}: 유효 셀 {} 개, 평균 CPTED {}",
+        log.info("경로 {}: 유효 셀 {} 개, 평균 CPTED {}",
                 routeId, visitedCells.size(), avgCpted);
 
         // Step 4: 시설물 개수 합산
@@ -102,7 +102,7 @@ public class CptedService {
                 .count();
 
         long endTime = System.currentTimeMillis();
-        log.info("✅ 경로 {} 분석 완료: {} ms", routeId, endTime - startTime);
+        log.info("경로 {} 분석 완료: {} ms", routeId, endTime - startTime);
 
         return RouteAnalysisData.builder()
                 .routeId(routeId)
