@@ -18,42 +18,35 @@ import java.nio.charset.StandardCharsets;
 @Slf4j
 public class FirebaseConfig {
 
-    @Value("${FIREBASE_KEY:}")
-    private String firebaseKeyJson;
-
-    @Value("${FIREBASE_PROJECT_ID:ganzithon-39944}")
-    private String projectId;
-
     @Value("${firebase.database-url:}")
     private String databaseUrl;
 
+    @Value("${FIREBASE_PROJECT_ID:}")
+    private String projectIdEnv;
+
     private GoogleCredentials loadCredentials() throws IOException {
-        if (firebaseKeyJson == null || firebaseKeyJson.isBlank()) {
-            log.warn("[Firebase] FIREBASE_KEY 가 비어있습니다. Application Default Credentials 사용 시도");
-            return GoogleCredentials.getApplicationDefault();
-        }
-
-        String json = firebaseKeyJson.replace("\\n", "\n");
-
-        return GoogleCredentials.fromStream(
-                new ByteArrayInputStream(json.getBytes(StandardCharsets.UTF_8))
-        );
+        GoogleCredentials credentials = GoogleCredentials.getApplicationDefault();
+        log.info("[Firebase] Using ADC credentials: {}", credentials.getClass().getName());
+        return credentials;
     }
 
     @Bean
     public FirebaseApp firebaseApp() throws IOException {
         GoogleCredentials credentials = loadCredentials();
 
-        FirebaseOptions options = FirebaseOptions.builder()
+        FirebaseOptions.Builder builder = FirebaseOptions.builder()
                 .setCredentials(credentials)
-                .setProjectId(projectId)
-                .setDatabaseUrl(databaseUrl)
-                .build();
+                .setDatabaseUrl(databaseUrl);
+
+        if (projectIdEnv != null && !projectIdEnv.isBlank()) {
+            builder.setProjectId(projectIdEnv);
+        }
 
         FirebaseApp app;
         if (FirebaseApp.getApps().isEmpty()) {
-            app = FirebaseApp.initializeApp(options);
-            log.info("[Firebase] FirebaseApp initialized. projectId={}", projectId);
+            app = FirebaseApp.initializeApp(builder.build());
+            log.info("[Firebase] FirebaseApp initialized. projectId={}",
+                    app.getOptions().getProjectId());
         } else {
             app = FirebaseApp.getInstance();
         }
@@ -63,15 +56,16 @@ public class FirebaseConfig {
 
     @Bean
     public Firestore firestore(FirebaseApp firebaseApp) throws IOException {
-        // 같은 credentials 로 Firestore 생성
         GoogleCredentials credentials = loadCredentials();
 
-        FirestoreOptions options = FirestoreOptions.newBuilder()
-                .setCredentials(credentials)
-                .setProjectId(projectId)
-                .build();
+        FirestoreOptions.Builder builder = FirestoreOptions.newBuilder()
+                .setCredentials(credentials);
 
-        Firestore firestore = options.getService();
+        if (projectIdEnv != null && !projectIdEnv.isBlank()) {
+            builder.setProjectId(projectIdEnv);
+        }
+
+        Firestore firestore = builder.build().getService();
         log.info("[Firebase] Firestore initialized. projectId={}",
                 firestore.getOptions().getProjectId());
 
