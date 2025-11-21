@@ -21,7 +21,7 @@ public class FirebaseClient {
 
     private final Firestore firestore;
 
-    @Value("${firebase.test-mode:true}")
+    @Value("${firebase.test-mode:false}")
     private boolean testMode;
 
     // firestore 권장 배치 크기
@@ -31,7 +31,9 @@ public class FirebaseClient {
 
     @PostConstruct
     public void logProject() {
-        log.info("[Firebase] projectId={}", firestore.getOptions().getProjectId());
+        log.info("[Firebase] projectId={}, testMode={}",
+                firestore.getOptions().getProjectId(),
+                testMode);
     }
 
     // 여러 cellId를 한번에 조회(Batch)
@@ -134,28 +136,43 @@ public class FirebaseClient {
     }
 
     // 기존 cellId 조회 함수
-    public SafetyCell getCellData(String cellId) throws ExecutionException, InterruptedException, TimeoutException {
+    public SafetyCell getCellData(String cellId) {
+        // 1. testMode 여부 먼저 확인
         if (testMode) {
-            log.warn("[TEST MODE DISABLED] Mock data requested but generateMockData() has been removed. Returning null.");
+            log.warn("[TEST MODE] testMode=true → Firestore 조회 생략, null 반환 (cellId={})", cellId);
             return null;
         }
 
+        long start = System.currentTimeMillis();
+
         try {
             DocumentReference docRef = firestore.collection("cpted_grid").document(cellId);
+            // 한 셀 조회 타임아웃 30초
             DocumentSnapshot snapshot = docRef.get().get(30, TimeUnit.SECONDS);
+            long took = System.currentTimeMillis() - start;
 
             if (snapshot.exists()) {
-                log.debug("[DB SUCCESS] Fetched cell: {}", cellId);
-                return snapshot.toObject(SafetyCell.class);
+                SafetyCell cell = snapshot.toObject(SafetyCell.class);
+                if (cell != null) {
+                    cell.setCellId(cellId);
+                }
+                log.info("[DB SUCCESS] cellId={} ({}ms, score={})",
+                        cellId, took,
+                        (cell != null ? cell.getCptedScore() : null));
+                return cell;
             } else {
-                log.warn("[DB NOT FOUND] Cell ID not found: {}", cellId);
+                log.warn("[DB NOT FOUND] cellId={} ({}ms)", cellId, took);
                 return null;
             }
+
         } catch (ExecutionException e) {
-            log.error("[DB ERROR] Firebase execution failed for {}: {}", cellId, e.getMessage());
+            long took = System.currentTimeMillis() - start;
+            log.error("[DB ERROR] cellId={} ({}ms) - {}", cellId, took, e.getMessage());
             return null;
+
         } catch (InterruptedException | TimeoutException e) {
-            log.error("[DB TIMEOUT] Firebase query timed out for {}: {}", cellId, e.getMessage());
+            long took = System.currentTimeMillis() - start;
+            log.error("[DB TIMEOUT] cellId={} ({}ms) - {}", cellId, took, e.getMessage());
             return null;
         }
     }
