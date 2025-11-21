@@ -118,11 +118,11 @@ public class FirebaseClient {
                         log.debug("✗ {} (not found)", cellId);
                     }
                 } catch (Exception e) {
-                    log.warn("⚠ {} 조회 실패: {}", cellId, e.getMessage());
+                    log.warn("⚠ {} 조회 실패", cellId, e);
                 }
             }
         } catch (Exception e) {
-            log.error("fetchBatchSync 실패: {}", e.getMessage());
+            log.error("fetchBatchSync 실패", e);
         }
     }
 
