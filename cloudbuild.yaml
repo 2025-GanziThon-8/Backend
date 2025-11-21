@@ -11,9 +11,9 @@ steps:
           --allow-unauthenticated \
           --min-instances 0 \
           --max-instances 3 \
-          --cpu 1 \
-          --memory 512Mi \
-          --timeout 60
+          - '--cpu=2'         
+          - '--memory=2Gi'     
+          - '--timeout=300'
 
 options:
   defaultLogsBucketBehavior: REGIONAL_USER_OWNED_BUCKET

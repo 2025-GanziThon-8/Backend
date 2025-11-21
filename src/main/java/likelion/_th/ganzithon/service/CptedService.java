@@ -32,8 +32,7 @@ public class CptedService {
         return latIndex + "_" + lngIndex;
     }
 
-    // 경로별 CPTED 분석
-
+    // 경로별 CPTED 분석 (batch 조회 사용)
     public RouteAnalysisData analyzeRoute(
             String routeId,
             List<ReportRequest.Coordinate> coordinates,
@@ -42,80 +41,68 @@ public class CptedService {
     ) throws ExecutionException, InterruptedException, TimeoutException {
 
         if (coordinates == null || coordinates.isEmpty()) {
-            return RouteAnalysisData.builder()
-                    .routeId(routeId)
-                    .distance(totalDistance)
-                    .time(totalTime)
-                    .coordinates(Collections.emptyList())
-                    .cctvCount(0)
-                    .lightCount(0)
-                    .storeCount(0)
-                    .policeCount(0)
-                    .schoolCount(0)
-                    .cptedAvg(0.0)
-                    .segments(Collections.emptyList())
-                    .riskSegmentCount(0)
-                    .build();
+            return buildEmptyRouteAnalysis(routeId, totalDistance, totalTime);
         }
 
-        // gridId -> DB 셀 (null 포함해서 캐시)
-        Map<String, FirebaseClient.SafetyCell> cellCache = new HashMap<>();
-        Map<String, FirebaseClient.SafetyCell> visitedCells = new HashMap<>();
+        long startTime = System.currentTimeMillis();
 
-        double sumScoreForPath = 0.0;  // 경로 전체 CPTED 점수 합
-        int pointCount = 0;            // 경로 좌표 개수
+        // Step 1: 필요한 모든 gridId를 먼저 수집 (중복 제거)
+        Set<String> uniqueGridIds = coordinates.stream()
+                .map(point -> toGridId(point.getLat(), point.getLng()))
+                .collect(Collectors.toSet());
+
+        log.info("경로 {}: 총 좌표 {} 개 → 고유 셀 {} 개",
+                routeId, coordinates.size(), uniqueGridIds.size());
+
+        // Step 2: Batch로 한 번에 조회
+        Map<String, FirebaseClient.SafetyCell> visitedCells =
+                firebaseClient.getCellDataBatch(new ArrayList<>(uniqueGridIds));
+
+        long fetchTime = System.currentTimeMillis();
+        log.info("DB 조회 완료: {} ms", fetchTime - startTime);
+
+        // Step 3: 경로 전체 점수 계산
+        double sumScoreForPath = 0.0;
+        int validPointCount = 0;
 
         for (ReportRequest.Coordinate point : coordinates) {
             String gridId = toGridId(point.getLat(), point.getLng());
-            pointCount++;
+            FirebaseClient.SafetyCell cell = visitedCells.get(gridId);
 
-            FirebaseClient.SafetyCell cell = cellCache.get(gridId);
-
-            // 캐시에 없으면 DB 한 번 조회
-            if (cell == null && !cellCache.containsKey(gridId)) {
-                log.warn("📍 요청 gridId={} (lat={}, lng={})", gridId, point.getLat(), point.getLng());
-
-                cell = firebaseClient.getCellData(gridId);
-                cellCache.put(gridId, cell);  // null도 그대로 저장해서 중복 조회 방지
-
-                if (cell == null) {
-                    log.warn("DB NOT FOUND: {}", gridId);
-                } else {
-                    log.warn("DB HIT: {}", gridId);
-                    visitedCells.put(gridId, cell);
-                }
-            }
-
-            // DB 에 있는 셀만 점수에 포함, 없는 셀은 0점으로 간주
             if (cell != null) {
                 sumScoreForPath += cell.getCptedScore();
+                validPointCount++;
             }
         }
 
-        // 경로 평균 CPTED 점수 (좌표 개수 기준)
-        double avgCpted = pointCount == 0 ? 0.0 : sumScoreForPath / pointCount;
+        double avgCpted = validPointCount == 0 ? 0.0 : sumScoreForPath / validPointCount;
         avgCpted = Math.round(avgCpted * 10.0) / 10.0;
 
-        log.warn("경로 {} 분석: pointCount={}, dbCellCount={}, avgCpted={}",
-                routeId, pointCount, visitedCells.size(), avgCpted);
+        log.info("경로 {}: 유효 셀 {} 개, 평균 CPTED {}",
+                routeId, visitedCells.size(), avgCpted);
 
-        // 경로 전체 시설 개수 합
-        int totalCctv = 0, totalLight = 0, totalStore = 0, totalPolice = 0, totalSchool = 0;
+        // Step 4: 시설물 개수 합산
+        int totalCctv = 0, totalLight = 0, totalStore = 0,
+                totalPolice = 0, totalSchool = 0;
+
         for (FirebaseClient.SafetyCell cell : visitedCells.values()) {
-            totalCctv += cell.getCctvCount();
-            totalLight += cell.getLightCount();
-            totalStore += cell.getStoreCount();
-            totalPolice += cell.getPoliceCount();
-            totalSchool += cell.getSchoolCount();
+            totalCctv += cell.getCctvCount() != null ? cell.getCctvCount() : 0;
+            totalLight += cell.getLightCount() != null ? cell.getLightCount() : 0;
+            totalStore += cell.getStoreCount() != null ? cell.getStoreCount() : 0;
+            totalPolice += cell.getPoliceCount() != null ? cell.getPoliceCount() : 0;
+            totalSchool += cell.getSchoolCount() != null ? cell.getSchoolCount() : 0;
         }
 
-        // 200m 구간별 분석
+        // Step 5: 200m 구간별 분석
         List<RouteAnalysisData.SegmentAnalysis> segments =
                 buildSegments(coordinates, visitedCells, totalDistance);
 
         int riskCount = (int) segments.stream()
                 .filter(s -> !s.getSafetyLevel().equals("안전"))
                 .count();
+
+        long endTime = System.currentTimeMillis();
+        log.info("경로 {} 분석 완료: {} ms", routeId, endTime - startTime);
 
         return RouteAnalysisData.builder()
                 .routeId(routeId)
@@ -132,6 +119,27 @@ public class CptedService {
                 .riskSegmentCount(riskCount)
                 .build();
     }
+
+    // 빈 경로 데이터 반환
+    private RouteAnalysisData buildEmptyRouteAnalysis(
+            String routeId, int totalDistance, int totalTime) {
+        return RouteAnalysisData.builder()
+                .routeId(routeId)
+                .distance(totalDistance)
+                .time(totalTime)
+                .coordinates(Collections.emptyList())
+                .cctvCount(0)
+                .lightCount(0)
+                .storeCount(0)
+                .policeCount(0)
+                .schoolCount(0)
+                .cptedAvg(0.0)
+                .segments(Collections.emptyList())
+                .riskSegmentCount(0)
+                .build();
+    }
+
+    // ==================== Percentile 관련 ====================
 
     public int getPercentileScore(String type, int value) {
         return estimatePercentile(value, getAverageCount(type));
@@ -162,6 +170,8 @@ public class CptedService {
                 return 5;
         }
     }
+
+    // ==================== 구간별 분석 ====================
 
     private List<RouteAnalysisData.SegmentAnalysis> buildSegments(
             List<ReportRequest.Coordinate> coordinates,
@@ -281,6 +291,7 @@ public class CptedService {
         contributions.put("가로등", lightContribution);
         contributions.put("편의점", storeContribution);
         contributions.put("경찰서", policeContribution);
+        contributions.put("학교", schoolContribution);
 
         List<String> topFeatures = contributions.entrySet().stream()
                 .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
@@ -330,6 +341,8 @@ public class CptedService {
                 return stats.storeCount;
             case "경찰서":
                 return stats.policeCount;
+            case "학교":
+                return stats.schoolCount;
             default:
                 return 0;
         }

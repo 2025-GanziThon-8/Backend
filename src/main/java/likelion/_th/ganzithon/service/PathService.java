@@ -34,6 +34,7 @@ public class PathService {
     public PathSearchResponse searchPaths(PathSearchRequest request)
             throws ExecutionException, InterruptedException, TimeoutException {
 
+
         long totalStart = System.currentTimeMillis();
         long tmapStart = totalStart;
 
@@ -118,6 +119,8 @@ public class PathService {
             RouteAnalysisData data = cptedFutures.get(i).join();
             analyzedRoutes.add(data);
         }
+        // cpted 분석 완료 시간
+        long cptedEndTime = System.currentTimeMillis();
 
         long cptedEnd = System.currentTimeMillis();
         log.info("CPTED 분석 완료: {} 개 경로 (소요: {}ms)",
