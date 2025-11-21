@@ -183,7 +183,7 @@ public class TmapsClient {
         double midLng = (startLng + endLng) / 2;
 
         // 300m ≈ 0.003도
-        double offset = 0.003;
+        double offset = 0.007;
 
         if (direction.equals("north")) {
             return new LatLng(midLat + offset, midLng);
