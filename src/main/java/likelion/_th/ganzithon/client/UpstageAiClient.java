@@ -14,6 +14,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -79,7 +80,7 @@ public class UpstageAiClient {
     public String generateText(String prompt) throws JsonProcessingException {
         Map<String, Object> requestBody = Map.of(
                 "model", "solar-pro2",
-                "reasoning_effort", "high",
+                "reasoning_effort", "medium",
                 "messages", new Object[]{
                         Map.of("role", "system", "content",
                                 "당신은 CPTED 기반 안전 경로 분석 전문가입니다."),
@@ -101,100 +102,140 @@ public class UpstageAiClient {
     // ------------------------ 프롬프트 생성 메서드들 ----------------------------
 
     // 추천 경로 프롬프트
-    private String buildRouteComparisonPrompt(
-            List<RouteAnalysisData> routes
-    ) {
+    private String buildRouteComparisonPrompt(List<RouteAnalysisData> routes) {
         StringBuilder sb = new StringBuilder();
-        sb.append("다음 3개의 도보 경로를 종합하여 가장 추천할 경로를 선택해줘");
+        sb.append("다음 3개의 도보 경로 중 가장 추천할 경로를 선택해 주세요.\n");
+        sb.append("각 경로의 안전성과 거리, 소요 시간을 함께 고려해 주세요.\n\n");
 
         for (int i = 0; i < routes.size(); i++) {
             RouteAnalysisData route = routes.get(i);
-            sb.append(String.format(" [경로%d] \n", i+1));
-            sb.append(String.format("- 거리: %dm (도보 약 %d분)\n", route.getDistance(), route.getTime() / 60));
-            sb.append(String.format("- CPTED 안전 점수: %.1f점\n", route.getCptedAvg()));
-            sb.append(String.format("- 안전 시설: CCTV %d개, 가로등 %d개\n",
+            sb.append(String.format("[경로%d]\n", i + 1));
+            sb.append(String.format("- 거리: %dm (도보 약 %d분)\n",
+                    route.getDistance(), route.getTime() / 60));
+            sb.append(String.format("- CPTED 안전 점수: %.1f점 (5점 만점)\n",
+                    route.getCptedAvg()));
+            sb.append(String.format("- CCTV: %d개, 가로등: %d개\n",
                     route.getCctvCount(), route.getLightCount()));
-            sb.append(String.format("- 주의/위험 구간: %d개\n\n", route.getRiskSegmentCount()));
+            sb.append(String.format("- 주의/위험 구간: %d개\n\n",
+                    route.getRiskSegmentCount()));
         }
-        sb.append("다음 형식으로 답변해주세요:\n");
+        sb.append("아래 형식을 정확히 지켜서 답변해 주세요.\n");
         sb.append("추천 경로: 경로N\n");
         sb.append("이유:\n");
-        sb.append("1. [첫 번째 이유]\n");
-        sb.append("2. [두 번째 이유]\n");
-        sb.append("3. [세 번째 이유]");
+        sb.append("1. 첫 번째 이유\n");
+        sb.append("2. 두 번째 이유\n");
+        sb.append("3. 세 번째 이유\n");
 
         return sb.toString();
     }
 
     // 경로별 ai_priview용 프롬프트
+    // 경로별 AI 프리뷰용 프롬프트 (리뉴얼 버전)
     private String buildPreviewPrompt(RouteAnalysisData route) {
-        String lightCommentHint;
-        if (route.getLightCount() == 0) {
-            lightCommentHint = "이 경로는 가로등이 거의 없는 경로입니다.";
-        } else if (route.getLightCount() < 5) {
-            lightCommentHint = "이 경로는 가로등이 적은 편입니다.";
+        double avg = route.getCptedAvg();
+        int risk = route.getRiskSegmentCount();
+        int cctv = route.getCctvCount();
+        int light = route.getLightCount();
+
+        // 전반 안전 수준 (점수 + 위험구간 기준)
+        String safetyLevel;
+        if (avg >= 4.0 && risk <= 1) {
+            safetyLevel = "전반적으로 안전한 편";
+        } else if (avg >= 3.0) {
+            safetyLevel = "대체로 무난한 편";
         } else {
-            lightCommentHint = "이 경로는 가로등이 비교적 잘 설치되어 있습니다.";
+            safetyLevel = "조금 더 주의가 필요한 편";
         }
+
+        // 밝기/조도 (가로등 + CCTV 대략 합산)
+        int brightnessScore = light + (int) Math.round(cctv * 0.5);
+        String brightnessLevel;
+        if (brightnessScore >= 10) {
+            brightnessLevel = "야간에도 비교적 밝은 편";
+        } else if (brightnessScore >= 5) {
+            brightnessLevel = "조명은 보통 수준";
+        } else {
+            brightnessLevel = "야간에는 다소 어두운 구간이 있을 수 있는 편";
+        }
+
+        // 주변 시선/감시 느낌 (CCTV 기준, '없다'라는 말은 안 쓰도록)
+        String watchLevel;
+        if (cctv >= 6) {
+            watchLevel = "주변 시선과 감시가 꽤 느껴지는 편";
+        } else if (cctv >= 3) {
+            watchLevel = "사람이 어느 정도 지나다니는 편";
+        } else {
+            watchLevel = "사람이 적고 시선이 다소 부족할 수 있는 편";
+        }
+
+        // 위험/주의 구간 느낌 (개수 → 말로만 전달)
+        String riskHint;
+        if (risk == 0) {
+            riskHint = "특별히 위험한 구간은 거의 없는 편";
+        } else if (risk <= 2) {
+            riskHint = "몇 곳 정도는 조금 더 신경 쓰면 좋은 구간";
+        } else {
+            riskHint = "여러 구간에서 주변을 살피며 이동하면 좋은 경로";
+        }
+
         return String.format(
-                "다음은 도보 경로의 안전성 분석 데이터입니다:\n\n" +
-                        "【경로 정보】\n" +
-                        "- 총 거리: %dm (도보 약 %d분)\n" +
-                        "- CPTED 안전 점수: %.1f점 (5점 만점)\n" +
-                        "- CCTV: %d개, 가로등: %d개\n" +
-                        "- 주의/위험 구간: %d개\n\n" +
-                        "이 경로의 특징을 사용자에게 친근하게 설명해주세요.\n\n" +
-                        "【작성 규칙】\n" +
-                        "1. 총 3줄로 작성\n" +
-                        "2. 각 줄은 20-30자 이내\n" +
-                        "3. '-에요', '-예요' 등 친근한 존댓말 사용\n" +
-                        "4. 숫자 나열보다는 의미 있는 설명으로 (예: 'CCTV가 많아 안전해요')\n" +
-                        "5. 경로의 가장 중요한 특징 3가지만 선택\n" +
-                        "6. 긍정적인 면과 주의할 점을 균형있게\n\n" +
-                        "7. 같은 표현을 반복하지 말고, 매번 다른 문장으로 설명해주세요.\n" +
-                        "8. 가로등이 1개 이상이면 '가로등이 없다'라는 표현은 사용하지 말아주세요.\n" +
-                        "참고 정보: " + lightCommentHint + "\n" +
-                        "【예시 스타일】\n" +
-                        "가로등과 상점이 많은 밝은 길이에요\n" +
-                        "이동 거리가 짧고 신호 교차가 적어요\n" +
-                        "다만 야간엔 조명이 어두울 수 있어요'\n\n" +
-                        "위 스타일을 참고하여 이 경로만의 특징을 설명해주세요.",
-                // AI에게 줄 정보
-                route.getDistance(), // 거리
-                route.getTime() / 60, // 시간 (분)
-                route.getCptedAvg(), // CPTED 평균 점수
-                route.getCctvCount(), // cctv 개수
-                route.getLightCount(), // 가로등 개수
-                route.getRiskSegmentCount() // 위험요소 개수
+                "도보 경로의 안전성과 분위기를 간단히 안내해 주세요.\n\n" +
+                        "[경로 기본 정보]\n" +
+                        "- 도보 거리: %dm (약 %d분)\n" +
+                        "- 전반 안전 수준: %s\n" +
+                        "- 야간 밝기: %s\n" +
+                        "- 주변 감시/시선: %s\n" +
+                        "- 위험/주의 구간: %s\n\n" +
+                        "[작성 규칙]\n" +
+                        "1. 총 3줄, 각 줄은 20~30자 이내로 작성합니다.\n" +
+                        "2. 숫자(개수, 점수, 구간 수 등)는 문장에 직접 쓰지 않습니다.\n" +
+                        "3. 첫 번째 줄: 길 전체의 분위기를 한 줄로 요약합니다.\n" +
+                        "4. 두 번째 줄: 밝기·사람·시설 등 이 경로의 장점을 중심으로 씁니다.\n" +
+                        "5. 세 번째 줄: 주의해야 할 점과 이용 팁을 중심으로 씁니다.\n" +
+                        "6. '-에요', '-예요' 형태의 부드러운 존댓말을 사용합니다.\n" +
+                        "7. 세 줄은 서로 다른 내용을 담고, 비슷한 표현을 반복하지 마세요.\n" +
+                        "8. CCTV나 가로등이 부족한 경우에도 '하나도 없다'라는 표현 대신 " +
+                        "'적은 편이에요', '많지 않아요'처럼 완화된 표현을 사용해 주세요.",
+                route.getDistance(),
+                route.getTime() / 60,
+                safetyLevel,
+                brightnessLevel,
+                watchLevel,
+                riskHint
         );
     }
 
+
     // 사용자가 선택한 경로 리포트용 프롬프트
-    private String buildDetailedPrompt(String origin, String destination
-    , RouteAnalysisData analysis, ReportResponse.CptedEvaluation cptedEval) {
+    private String buildDetailedPrompt(
+            String origin,
+            String destination,
+            RouteAnalysisData analysis,
+            ReportResponse.CptedEvaluation cptedEval
+    ) {
         return String.format(
-                "【경로 정보】\n" +
-                        "%s → %s (도보 %dm, 약 %d분)\n\n" +
-                        "【CPTED 5대 평가】\n" +
+                "통학/도보 경로의 안전성을 간단히 요약해 주세요.\n\n" +
+                        "[경로 정보]\n" +
+                        "- 출발지: %s\n" +
+                        "- 도착지: %s\n" +
+                        "- 거리: %dm, 도보 약 %d분\n\n" +
+                        "[CPTED 5대 평가 (0~100점)]\n" +
                         "1. 자연감시: %d점 - %s\n" +
                         "2. 접근통제: %d점 - %s\n" +
                         "3. 영역성: %d점 - %s\n" +
                         "4. 활동성: %d점 - %s\n" +
                         "5. 유지관리: %d점 - %s\n\n" +
-                        "【안전 시설】\n" +
+                        "[시설 정보]\n" +
                         "- CCTV: %d개, 가로등: %d개\n" +
-                        "- 주의 구간: %d개\n\n" +
-                        "【작성 규칙】\n" +
-                        "1. 각 줄은 20-30자 이내\n" +
-                        "2. '-에요', '-예요' 등 친근한 존댓말 사용\n" +
-                        "3. 긍정적인 면과 주의할 점을 균형있게\n\n" +
-                        "【예시 스타일】\n" +
-                        "- '이 경로는 가시성과 유지관리 측면에서 안전성이 높으며,\n" +
-                        "CCTV 밀도와 조명 밝기가 평균 이상입니다.'\n" +
-                        "- '일부 좁은 골목 구간 (210 ~ 310m)은 접근통제 취약으로\n" +
-                        "주의가 필요합니다'\n" +
-                        "위 데이터를 바탕으로 이 통학로의 안전성을 3-4줄로 간결하게 종합 평가해주세요.",
-                origin, destination, analysis.getDistance(), analysis.getTime() / 60,
+                        "- 주의/위험 구간: %d개\n\n" +
+                        "[작성 규칙]\n" +
+                        "1. 3~4줄로 간단히 작성\n" +
+                        "2. 전체적인 안전 수준과 강점, 주의할 점을 함께 언급\n" +
+                        "3. '-에요', '-예요' 등 친근한 존댓말 사용\n",
+                origin,
+                destination,
+                analysis.getDistance(),
+                analysis.getTime() / 60,
                 cptedEval.getNaturalSurveillance().getScore(),
                 cptedEval.getNaturalSurveillance().getDescription(),
                 cptedEval.getAccessControl().getScore(),
@@ -210,6 +251,7 @@ public class UpstageAiClient {
                 analysis.getRiskSegmentCount()
         );
     }
+
 
     // 파싱 및 폴백 메서드들
 
@@ -244,24 +286,39 @@ public class UpstageAiClient {
 
     // 기본 답변
     private List<String> generateDefaultPreview(RouteAnalysisData route) {
-        List<String> preview = new java.util.ArrayList<>();
+        List<String> preview = new ArrayList<>();
 
-        if (route.getCptedAvg() >= 3.0) {
-            preview.add("안전 시설이 잘 갖춰져 있습니다");
+        double avg = route.getCptedAvg();
+        int risk = route.getRiskSegmentCount();
+        int cctv = route.getCctvCount();
+        int light = route.getLightCount();
+        int brightnessScore = light + (int) Math.round(cctv * 0.5);
+
+        // 1줄: 전체 분위기
+        if (avg >= 4.0 && risk <= 1) {
+            preview.add("전반적으로 안정감 있는 길이에요");
+        } else if (avg >= 3.0) {
+            preview.add("대체로 무난하지만 일부 구간은 조심해요");
         } else {
-            preview.add("일부 구간 주의가 필요합니다");
+            preview.add("야간에는 특히 주의를 기울이면 좋아요");
         }
 
-        if (route.getCctvCount() >= 5) {
-            preview.add("CCTV가 충분히 설치되어 있습니다");
+        // 2줄: 밝기/시설 장점
+        if (brightnessScore >= 10) {
+            preview.add("야간에도 비교적 밝아서 안심돼요");
+        } else if (brightnessScore >= 5) {
+            preview.add("조명은 보통이라 크게 불편하진 않아요");
         } else {
-            preview.add("CCTV 설치가 제한적입니다");
+            preview.add("조명이 많지 않아 어두운 곳이 있을 수 있어요");
         }
 
-        if (route.getRiskSegmentCount() == 0) {
-            preview.add("전 구간 안전합니다");
+        // 3줄: 주의점/이용 팁
+        if (risk == 0) {
+            preview.add("특별한 위험 구간 없이 편하게 걸을 수 있어요");
+        } else if (risk <= 2) {
+            preview.add("사람이 적은 골목만 조금 서둘러 지나가면 좋아요");
         } else {
-            preview.add(String.format("%d개 구간에서 주의하세요", route.getRiskSegmentCount()));
+            preview.add("여러 구간에서 주변을 자주 둘러보며 이동해 주세요");
         }
 
         return preview;
