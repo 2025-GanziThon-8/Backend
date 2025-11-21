@@ -9,13 +9,12 @@ import likelion._th.ganzithon.dto.response.PathInfo;
 import likelion._th.ganzithon.dto.response.PathSearchResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.util.concurrent.*;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -23,25 +22,32 @@ import java.util.concurrent.TimeoutException;
 // 경로 조회
 public class PathService {
 
-    //    private final GoogleMapsClient googleMapsClient;
     private final TmapsClient tmapsClient;
     private final UpstageAiClient upstageAiClient;
     private final CptedService cptedService;
+
+    // AsyncConfig 에서 만든 aiExecutor 재사용 (CPTED 병렬에도 같이 사용)
+    @Qualifier("aiExecutor")
+    private final Executor aiExecutor;
 
     // 선택할 3개의 경로를 탐색
     public PathSearchResponse searchPaths(PathSearchRequest request)
             throws ExecutionException, InterruptedException, TimeoutException {
 
+        long totalStart = System.currentTimeMillis();
+        long tmapStart = totalStart;
+
         log.info("경로 검색 시작: ({},{}) → ({},{})",
                 request.getStartLat(), request.getStartLng(),
                 request.getEndLat(), request.getEndLng());
 
-        // 경유지 로깅
         if (request.hasWaypoint()) {
             log.info("경유지 포함: ({},{})", request.getWaypointLat(), request.getWaypointLng());
         }
 
-        // 1. 티맵 api로 경로 조회
+        // ---------------------------------------------------------------------
+        // 1. 티맵 API로 경로 조회
+        // ---------------------------------------------------------------------
         List<TmapsClient.TmapRoute> tmapRoutes = tmapsClient.getRoutes(
                 request.getStartLat(),
                 request.getStartLng(),
@@ -55,29 +61,71 @@ public class PathService {
             throw new IllegalArgumentException("경로를 찾을 수 없습니다. 출발지와 도착지를 확인해주세요.");
         }
 
-        log.info("티맵에서 {} 개 경로 수신", tmapRoutes.size());
+        long tmapEnd = System.currentTimeMillis();
+        log.info("티맵에서 {} 개 경로 수신 (소요: {}ms)", tmapRoutes.size(), (tmapEnd - tmapStart));
 
-        // 2. 각 경로에 대해 CPTED 분석 수행
-        List<RouteAnalysisData> analyzedRoutes = new ArrayList<>();
-        List<List<ReportRequest.Coordinate>> polylines = new ArrayList<>();
+        // 원본 폴리라인 미리 저장 (티맵 순서 그대로)
+        List<List<ReportRequest.Coordinate>> polylines = tmapRoutes.stream()
+                .map(TmapsClient.TmapRoute::getEncodedPolyline)
+                .collect(Collectors.toList());
+
+        // ---------------------------------------------------------------------
+        // 2. 각 경로 CPTED 분석을 CompletableFuture 로 병렬 수행
+        // ---------------------------------------------------------------------
+        long cptedStart = System.currentTimeMillis();
+
+        List<CompletableFuture<RouteAnalysisData>> cptedFutures = new ArrayList<>();
 
         for (int i = 0; i < tmapRoutes.size(); i++) {
             TmapsClient.TmapRoute tmapRoute = tmapRoutes.get(i);
             String routeId = "path-" + (i + 1);
 
-            RouteAnalysisData analyzed = cptedService.analyzeRoute(
-                    routeId,
-                    tmapRoute.getCoordinates(),
-                    tmapRoute.getDistance(),
-                    tmapRoute.getDuration()
-            );
+            CompletableFuture<RouteAnalysisData> future =
+                    CompletableFuture.supplyAsync(() -> {
+                        try {
+                            return cptedService.analyzeRoute(
+                                    routeId,
+                                    tmapRoute.getCoordinates(),
+                                    tmapRoute.getDistance(),
+                                    tmapRoute.getDuration()
+                            );
+                        } catch (Exception e) {
+                            // CPTED 분석 실패 시 기본값으로 폴백
+                            log.error("CPTED 분석 실패: routeId={}", routeId, e);
+                            return RouteAnalysisData.builder()
+                                    .routeId(routeId)
+                                    .distance(tmapRoute.getDistance())
+                                    .time(tmapRoute.getDuration())
+                                    .coordinates(tmapRoute.getCoordinates())
+                                    .cctvCount(0)
+                                    .lightCount(0)
+                                    .storeCount(0)
+                                    .policeCount(0)
+                                    .schoolCount(0)
+                                    .cptedAvg(0.0)
+                                    .segments(Collections.emptyList())
+                                    .riskSegmentCount(0)
+                                    .build();
+                        }
+                    }, aiExecutor);
 
-            analyzedRoutes.add(analyzed);
-            // 원본 폴리라인 좌표 저장
-            polylines.add(tmapRoute.getEncodedPolyline());
+            cptedFutures.add(future);
         }
 
-        // 3. 3개의 경로 선택
+        // 병렬로 돌린 CPTED 분석 결과 모으기 (티맵 순서 유지)
+        List<RouteAnalysisData> analyzedRoutes = new ArrayList<>();
+        for (int i = 0; i < cptedFutures.size(); i++) {
+            RouteAnalysisData data = cptedFutures.get(i).join();
+            analyzedRoutes.add(data);
+        }
+
+        long cptedEnd = System.currentTimeMillis();
+        log.info("CPTED 분석 완료: {} 개 경로 (소요: {}ms)",
+                analyzedRoutes.size(), (cptedEnd - cptedStart));
+
+        // ---------------------------------------------------------------------
+        // 3. 3개의 대표 경로 선택 (안전/빠른/균형)
+        // ---------------------------------------------------------------------
         List<RouteAnalysisData> selectedRoutes = selectThreeRoutes(analyzedRoutes);
 
         // 점수 계산용 최소 거리/시간 (선택된 3개 경로 기준)
@@ -91,7 +139,12 @@ public class PathService {
                 .min()
                 .orElse(1);
 
-        // 각 경로에 대한 AI 프리뷰를 병렬로 시작
+        // ---------------------------------------------------------------------
+        // 4. AI 작업 (추천 경로 선택 + 프리뷰 생성 병렬)
+        // ---------------------------------------------------------------------
+        long aiStart = System.currentTimeMillis();
+
+        // 4-1) 각 경로의 AI 프리뷰를 병렬로 시작 (@Async 사용)
         Map<String, CompletableFuture<List<String>>> previewFutures = new HashMap<>();
         for (RouteAnalysisData route : selectedRoutes) {
             previewFutures.put(
@@ -100,19 +153,29 @@ public class PathService {
             );
         }
 
-        // 4. AI 추천 경로 선택
+        // 4-2) AI에게 추천 경로 한 번만 물어봄 (동기 호출이지만 1회)
         String recommendedRouteId = upstageAiClient.selectRecommendedRoute(selectedRoutes);
 
-        // 5. PathInfo로 변환
+        // 4-3) PathInfo로 변환 (프리뷰 Future 결과 수집)
         List<PathInfo> pathInfos = new ArrayList<>();
         for (RouteAnalysisData route : selectedRoutes) {
             int originalIndex = analyzedRoutes.indexOf(route);
             List<ReportRequest.Coordinate> encodedPolyline = polylines.get(originalIndex);
             boolean isRecommended = route.getRouteId().equals(recommendedRouteId);
 
-            // 병렬로 돌려놓은 프리뷰 결과 받기 (타임아웃은 적당히 설정)
-            List<String> aiPreview = previewFutures.get(route.getRouteId())
-                    .join();
+            List<String> aiPreview;
+            try {
+                // AI 프리뷰 15초 타임아웃
+                aiPreview = previewFutures.get(route.getRouteId())
+                        .get(15, TimeUnit.SECONDS);
+            } catch (Exception e) {
+                log.warn("AI 프리뷰 지연/오류 ({}): {}", route.getRouteId(), e.getMessage());
+                aiPreview = List.of(
+                        "AI 프리뷰가 지연되고 있어요.",
+                        "잠시 후 다시 시도해 주세요.",
+                        "기본 안전 분석만 먼저 제공해요."
+                );
+            }
 
             pathInfos.add(
                     convertToPathInfo(
@@ -126,8 +189,18 @@ public class PathService {
             );
         }
 
-        log.info("경로 검색 완료: 총 {} 개 경로 반환 (추천: {})",
-                pathInfos.size(), recommendedRouteId);
+        long aiEnd = System.currentTimeMillis();
+
+        long totalEnd = System.currentTimeMillis();
+
+        log.info("경로 검색 완료: 총 {} 개 경로 반환 (추천: {}) | ⏱️ 전체 소요시간: {}ms (티맵: {}ms, CPTED: {}ms, AI: {}ms)",
+                pathInfos.size(),
+                recommendedRouteId,
+                (totalEnd - totalStart),
+                (tmapEnd - tmapStart),
+                (cptedEnd - cptedStart),
+                (aiEnd - aiStart)
+        );
 
         return PathSearchResponse.builder()
                 .message("후보 경로 조회 성공")

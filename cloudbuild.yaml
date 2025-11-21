@@ -9,8 +9,6 @@ steps:
           --region asia-northeast3 \
           --service-account=${_SERVICE_ACCOUNT} \
           --allow-unauthenticated \
-          --set-env-vars "FIREBASE_PROJECT_ID=ganzithon-39944" \
-          --set-secrets "UPSTAGE_API_KEY=UPSTAGE_API_KEY:latest,TMAP_API_KEY=TMAP_API_KEY:latest" \
           --min-instances 0 \
           --max-instances 3 \
           --cpu 1 \
