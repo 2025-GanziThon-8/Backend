@@ -59,6 +59,9 @@ public class ReportService {
         int score = (request.getScore() != null) ? request.getScore() : 0;
         String grade = (request.getGrade() != null) ? request.getGrade() : "N/A";
 
+        log.info("[REPORT_SVC_IN] routeId={}, reqScore={}, reqGrade={}",
+                request.getRouteId(), score, grade);
+
         String overallGrade = String.format("%s (%d점)", grade, score);
 
         ReportResponse.RouteSummary routeSummary = ReportResponse.RouteSummary.builder()
@@ -78,6 +81,8 @@ public class ReportService {
                 .segmentGuides(segmentGuides)
                 .aiSummary(aiSummary)
                 .createdAt(LocalDateTime.now())
+                .score(score)
+                .grade(grade)
                 .build();
 
         return ReportResponse.builder()

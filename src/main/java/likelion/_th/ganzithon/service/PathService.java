@@ -286,8 +286,8 @@ public class PathService {
                 .distance(route.getDistance())
                 .polyline(encodedPolyline)
                 .cpted(Map.of("avg", route.getCptedAvg()))
-                .score(finalScore)        // 96
-                .grade(gradeChar)         // "A"
+                .score(finalScore)
+                .grade(gradeChar)
                 .summaryGrade(summaryGrade)
                 .aiPreview(aiPreview)        // 전달받은 값 그대로 사용
                 .isRecommended(isRecommended)
