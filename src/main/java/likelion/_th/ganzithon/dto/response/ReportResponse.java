@@ -61,6 +61,10 @@ public class ReportResponse {
 
         @JsonProperty("overall_grade")
         private String overallGrade;    // 종합 등급 (예: "A (82점)")
+
+        private String grade;
+        private int score;
+
     }
 
     // CPTED 5대 평가

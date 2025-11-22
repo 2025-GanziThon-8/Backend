@@ -56,13 +56,20 @@ public class ReportService {
         );
 
         // 6. 경로 요약 정보
-        String overallGrade = calculateOverallGrade(analysis.getCptedAvg());
+        double rawScore = Math.min(analysis.getCptedAvg() * 20, 100); // 5점 만점 -> 100점 환산
+        int score = (int) Math.round(rawScore);
+
+        String grade = getGradeChar(score); // (아까 만든 메서드 재사용 또는 복사)
+        String overallGrade = String.format("%s (%d점)", grade, score);
+
         ReportResponse.RouteSummary routeSummary = ReportResponse.RouteSummary.builder()
                 .origin(request.getOrigin())
                 .destination(request.getDestination())
                 .totalDistance(request.getTotalDistance())
                 .totalTime(request.getTotalTime())
                 .overallGrade(overallGrade)
+                .score(score)
+                .grade(grade)
                 .build();
 
         // 7. 최종 리포트 생성
@@ -288,4 +295,11 @@ public class ReportService {
         return "주의 필요";
     }
 
+    private String getGradeChar(int score) {
+        if (score >= 90) return "A";
+        if (score >= 75) return "B";
+        if (score >= 60) return "C";
+        if (score >= 40) return "D";
+        return "E";
+    }
 }
