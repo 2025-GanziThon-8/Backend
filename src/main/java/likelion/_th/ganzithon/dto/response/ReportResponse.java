@@ -3,6 +3,10 @@ package likelion._th.ganzithon.dto.response;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import likelion._th.ganzithon.domain.LatLng;
 import lombok.*;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -62,9 +66,8 @@ public class ReportResponse {
         @JsonProperty("overall_grade")
         private String overallGrade;    // 종합 등급 (예: "A (82점)")
 
+        private Integer score;
         private String grade;
-        private int score;
-
     }
 
     // CPTED 5대 평가
