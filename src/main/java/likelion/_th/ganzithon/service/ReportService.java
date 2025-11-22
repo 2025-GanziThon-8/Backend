@@ -56,10 +56,9 @@ public class ReportService {
         );
 
         // 6. 경로 요약 정보
-        double rawScore = Math.min(analysis.getCptedAvg() * 20, 100); // 5점 만점 -> 100점 환산
-        int score = (int) Math.round(rawScore);
+        int score = (request.getScore() != null) ? request.getScore() : 0;
+        String grade = (request.getGrade() != null) ? request.getGrade() : "N/A";
 
-        String grade = getGradeChar(score); // (아까 만든 메서드 재사용 또는 복사)
         String overallGrade = String.format("%s (%d점)", grade, score);
 
         ReportResponse.RouteSummary routeSummary = ReportResponse.RouteSummary.builder()
