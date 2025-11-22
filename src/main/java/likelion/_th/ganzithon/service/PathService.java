@@ -267,12 +267,18 @@ public class PathService {
             List<String> aiPreview
     ) {
         // 최종 점수 계산 (0~100)
-        double score = calcRouteScore(route, minDistance, minTime);
-        String summaryGrade = toSummaryGrade(score);
+        double rawScore = calcRouteScore(route, minDistance, minTime);
+        int finalScore = (int) Math.round(rawScore);
 
-        log.info("경로 {} 점수 계산: cptedAvg={}, distance={}, time={}, summaryGrade={}, ",
+        // 2. 등급 문자만 가져오기 ("A", "B"...)
+        String gradeChar = getGradeChar(finalScore);
+
+        // 3. 합친 문자열 만들기 ("A (96점)")
+        String summaryGrade = String.format("%s (%d점)", gradeChar, finalScore);
+
+        log.info("경로 {} 점수 계산: cptedAvg={}, distance={}, time={}, finalScore={}, gradeChar={}, ",
                 route.getRouteId(), route.getCptedAvg(),
-                route.getDistance(), route.getTime(), score, summaryGrade);
+                route.getDistance(), route.getTime(), finalScore, gradeChar);
 
         return PathInfo.builder()
                 .id(route.getRouteId())
@@ -280,6 +286,8 @@ public class PathService {
                 .distance(route.getDistance())
                 .polyline(encodedPolyline)
                 .cpted(Map.of("avg", route.getCptedAvg()))
+                .score(finalScore)        // 96
+                .grade(gradeChar)         // "A"
                 .summaryGrade(summaryGrade)
                 .aiPreview(aiPreview)        // 전달받은 값 그대로 사용
                 .isRecommended(isRecommended)
@@ -324,25 +332,12 @@ public class PathService {
         return Math.round(total * 10.0) / 10.0; // 소수 1자리
     }
 
-    /**
-     * 점수 → 등급 문자열 변환
-     * 예) 96.3 → "A (96점)"
-     */
-    private String toSummaryGrade(double score) {
-        String grade;
-        if (score >= 90) {
-            grade = "A";
-        } else if (score >= 75) {
-            grade = "B";
-        } else if (score >= 60) {
-            grade = "C";
-        } else if (score >= 40) {
-            grade = "D";
-        } else {
-            grade = "E";
-        }
-        int roundedScore = (int) Math.round(score);
-        return String.format("%s (%d점)", grade, roundedScore);
+    private String getGradeChar(int score) {
+        if (score >= 90) return "A";
+        if (score >= 75) return "B";
+        if (score >= 60) return "C";
+        if (score >= 40) return "D";
+        return "E";
     }
 
 }

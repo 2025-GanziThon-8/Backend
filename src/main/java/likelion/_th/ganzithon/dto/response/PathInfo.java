@@ -27,6 +27,9 @@ public class PathInfo {
     // 종합 등금: A(90점)
     @JsonProperty("summary_grade")
     private String summaryGrade;
+
+    private String grade;
+    private int score;
     // AI 리뷰
     @JsonProperty("ai_preview")
     private List<String> aiPreview;
