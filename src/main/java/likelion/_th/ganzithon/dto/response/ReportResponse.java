@@ -46,6 +46,12 @@ public class ReportResponse {
 
         @JsonProperty("created_at")
         private LocalDateTime createdAt;
+
+        @JsonProperty("score")
+        private Integer score;
+
+        @JsonProperty("grade")
+        private String grade;
     }
 
     // 경로 요약 정보
@@ -66,7 +72,10 @@ public class ReportResponse {
         @JsonProperty("overall_grade")
         private String overallGrade;    // 종합 등급 (예: "A (82점)")
 
+        @JsonProperty("score")
         private Integer score;
+
+        @JsonProperty("grade")
         private String grade;
     }
 
