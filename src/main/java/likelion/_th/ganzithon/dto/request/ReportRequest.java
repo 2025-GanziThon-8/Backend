@@ -16,6 +16,9 @@ public class ReportRequest {
     private Integer totalTime; // 총 시간
     private List<Coordinate> coordinates; // 경로 좌표 목록
 
+    private Integer score;
+    private String grade;
+
     @Data
     @NoArgsConstructor
     @AllArgsConstructor
