@@ -270,9 +270,9 @@ public class PathService {
         double score = calcRouteScore(route, minDistance, minTime);
         String summaryGrade = toSummaryGrade(score);
 
-        log.info("경로 {} 점수 계산: cptedAvg={}, distance={}, time={}, score={}",
+        log.info("경로 {} 점수 계산: cptedAvg={}, distance={}, time={}, summaryGrade={}, ",
                 route.getRouteId(), route.getCptedAvg(),
-                route.getDistance(), route.getTime(), score);
+                route.getDistance(), route.getTime(), score, summaryGrade);
 
         return PathInfo.builder()
                 .id(route.getRouteId())
